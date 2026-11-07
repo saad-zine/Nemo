@@ -18,6 +18,12 @@ export type KeySettings = {
   anonymizeShortcut: string;
 };
 
+export type ProviderConfig = {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+};
+
 export type Attachment = {
   id: string;
   name: string;
@@ -49,6 +55,7 @@ export type Thread = {
   title: string;
   updatedAt: number;
   messages: ChatMessage[];
+  autoAnonymize?: boolean;
 };
 
 export type Activity = {
@@ -64,6 +71,7 @@ type State = {
   apiKey: string;
   model: string;
   baseUrl: string;
+  providerKeys: Partial<Record<Provider, ProviderConfig>>;
   restoreReplies: boolean;
   anonymizeScope: AnonymizeScope;
   anonymizeShortcut: string;
@@ -71,6 +79,7 @@ type State = {
   strict: boolean;
   threads: Thread[];
   activeId: string;
+  newSessionAutoAnonymize: boolean;
   documents: number;
   entities: number;
   messagesRouted: number;
@@ -81,6 +90,8 @@ type State = {
   setSampleData: (v: boolean) => void;
   setFullAccessModalOpen: (open: boolean) => void;
   saveKey: (settings: KeySettings) => void;
+  saveProviderKey: (provider: Provider, config: ProviderConfig) => void;
+  activateProvider: (provider: Provider) => void;
   renameThread: (id: string, title: string) => void;
   deleteThread: (id: string) => void;
   setProvider: (p: Provider) => void;
@@ -93,24 +104,20 @@ type State = {
   setNavOrder: (v: NavKey[]) => void;
   setStrict: (v: boolean) => void;
   newThread: () => void;
+  startNewSession: () => void;
+  createThread: (messages: ChatMessage[], autoAnonymize?: boolean) => string;
+  setAutoAnonymize: (threadId: string, autoAnonymize: boolean) => void;
+  setNewSessionAutoAnonymize: (v: boolean) => void;
   clearThreads: () => void;
   selectThread: (id: string) => void;
   pushMessage: (threadId: string, message: ChatMessage) => void;
+  updateMessage: (threadId: string, messageId: string, updates: Partial<ChatMessage>) => void;
   record: (entry: Omit<Activity, "id" | "at">, entityDelta: number, doc?: boolean) => void;
   remember: (hits: Hit[]) => void;
 };
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
-}
-
-function blankThread(): Thread {
-  return {
-    id: uid(),
-    title: "New conversation",
-    updatedAt: Date.now(),
-    messages: [],
-  };
 }
 
 function uniqueTitle(base: string, threads: Thread[], excludeId?: string) {
@@ -124,8 +131,6 @@ function uniqueTitle(base: string, threads: Thread[], excludeId?: string) {
   return `${clean} ${n}`;
 }
 
-const first = blankThread();
-
 export const useVault = create<State>()(
   persist(
     (set) => ({
@@ -133,13 +138,15 @@ export const useVault = create<State>()(
       apiKey: "",
       model: "gpt-4o-mini",
       baseUrl: "https://api.openai.com/v1",
+      providerKeys: {},
       restoreReplies: true,
       anonymizeScope: "both",
       anonymizeShortcut: "Ctrl+H",
       navOrder: NAV_ORDER_DEFAULT,
       strict: true,
-      threads: [first],
-      activeId: first.id,
+      threads: [],
+      activeId: "",
+      newSessionAutoAnonymize: false,
       documents: 0,
       entities: 0,
       messagesRouted: 0,
@@ -149,7 +156,32 @@ export const useVault = create<State>()(
       sampleData: true,
       setSampleData: (sampleData) => set({ sampleData }),
       setFullAccessModalOpen: (fullAccessModalOpen) => set({ fullAccessModalOpen }),
-      saveKey: (settings) => set({ ...settings, apiKey: settings.apiKey.trim() }),
+      saveKey: (settings) => {
+        const config = { apiKey: settings.apiKey.trim(), model: settings.model, baseUrl: settings.baseUrl };
+        set((s) => ({
+          ...settings,
+          apiKey: config.apiKey,
+          providerKeys: { ...s.providerKeys, [settings.provider]: config },
+        }));
+      },
+      saveProviderKey: (provider, config) => {
+        const clean = { apiKey: config.apiKey.trim(), model: config.model, baseUrl: config.baseUrl };
+        set((s) => ({
+          providerKeys: { ...s.providerKeys, [provider]: clean },
+          ...(s.provider === provider ? { apiKey: clean.apiKey, model: clean.model, baseUrl: clean.baseUrl } : {}),
+        }));
+      },
+      activateProvider: (provider) =>
+        set((s) => {
+          const cfg = s.providerKeys[provider];
+          const info = providerInfo(provider);
+          return {
+            provider,
+            apiKey: cfg?.apiKey ?? "",
+            model: cfg?.model ?? info.models[0] ?? "",
+            baseUrl: cfg?.baseUrl ?? info.baseUrl,
+          };
+        }),
       renameThread: (id, title) =>
         set((s) => ({
           threads: s.threads.map((t) =>
@@ -167,9 +199,15 @@ export const useVault = create<State>()(
           return { threads: rest, activeId: s.activeId === id ? rest[0].id : s.activeId };
         }),
       setProvider: (provider) =>
-        set(() => {
+        set((s) => {
+          const cfg = s.providerKeys[provider];
           const info = providerInfo(provider);
-          return { provider, model: info.models[0] ?? "gpt-4o-mini", baseUrl: info.baseUrl };
+          return {
+            provider,
+            apiKey: cfg?.apiKey ?? "",
+            model: cfg?.model ?? info.models[0] ?? "",
+            baseUrl: cfg?.baseUrl ?? info.baseUrl,
+          };
         }),
       setApiKey: (apiKey) => set({ apiKey }),
       setModel: (model) => set({ model }),
@@ -180,16 +218,46 @@ export const useVault = create<State>()(
       setNavOrder: (navOrder) => set({ navOrder }),
       setStrict: (strict) => set({ strict }),
       newThread: () =>
+        set(() => ({
+          activeId: "",
+          newSessionAutoAnonymize: false,
+        })),
+      startNewSession: () =>
+        set(() => ({
+          activeId: "",
+          newSessionAutoAnonymize: false,
+        })),
+      createThread: (messages, autoAnonymize) => {
+        const id = uid();
+        const seed = messages[0]?.content?.trim() || messages[0]?.attachments?.[0]?.name || "";
+        const raw = seed.replace(/\s+/g, " ").slice(0, 42);
         set((s) => {
-          const t = blankThread();
-          t.title = uniqueTitle("New conversation", s.threads);
-          return { threads: [t, ...s.threads].slice(0, 24), activeId: t.id };
-        }),
+          const t: Thread = {
+            id,
+            title: uniqueTitle(raw || "New conversation", s.threads),
+            updatedAt: Date.now(),
+            messages,
+            autoAnonymize: autoAnonymize ?? s.newSessionAutoAnonymize,
+          };
+          return {
+            threads: [t, ...s.threads.filter((existing) => existing.messages.length > 0)].slice(0, 24),
+            activeId: id,
+            newSessionAutoAnonymize: false,
+          };
+        });
+        return id;
+      },
+      setAutoAnonymize: (threadId, autoAnonymize) =>
+        set((s) => ({
+          threads: s.threads.map((t) => (t.id === threadId ? { ...t, autoAnonymize } : t)),
+        })),
+      setNewSessionAutoAnonymize: (newSessionAutoAnonymize) => set({ newSessionAutoAnonymize }),
       clearThreads: () =>
-        set(() => {
-          const t = blankThread();
-          return { threads: [t], activeId: t.id };
-        }),
+        set(() => ({
+          threads: [],
+          activeId: "",
+          newSessionAutoAnonymize: false,
+        })),
       selectThread: (id) => set({ activeId: id }),
       pushMessage: (threadId, message) =>
         set((s) => ({
@@ -206,6 +274,19 @@ export const useVault = create<State>()(
               title,
               updatedAt: Date.now(),
               messages: [...t.messages, { ...message, at: message.at ?? Date.now() }],
+            };
+          }),
+        })),
+      updateMessage: (threadId: string, messageId: string, updates: Partial<ChatMessage>) =>
+        set((s) => ({
+          threads: s.threads.map((t) => {
+            if (t.id !== threadId) return t;
+            return {
+              ...t,
+              updatedAt: Date.now(),
+              messages: t.messages.map((m) =>
+                m.id === messageId ? { ...m, ...updates } : m
+              ),
             };
           }),
         })),
@@ -231,11 +312,31 @@ export const useVault = create<State>()(
       merge: (persisted, current) => {
         const merged = { ...current, ...(persisted as Partial<State>) };
         if (Array.isArray(merged.threads)) {
-          merged.threads = merged.threads.reduce<Thread[]>((acc, thread) => {
-            const title = uniqueTitle(thread.title, acc);
-            acc.push(title === thread.title ? thread : { ...thread, title });
-            return acc;
-          }, []);
+          merged.threads = merged.threads
+            .filter((t) => t && Array.isArray(t.messages) && t.messages.length > 0)
+            .reduce<Thread[]>((acc, thread) => {
+              const title = uniqueTitle(thread.title, acc);
+              acc.push(title === thread.title ? thread : { ...thread, title });
+              return acc;
+            }, []);
+        } else {
+          merged.threads = [];
+        }
+        if (merged.activeId && !merged.threads.some((t) => t.id === merged.activeId)) {
+          merged.activeId = merged.threads[0]?.id ?? "";
+        }
+        if (!merged.providerKeys || typeof merged.providerKeys !== "object") {
+          merged.providerKeys = {};
+        }
+        if (merged.apiKey && merged.provider && !merged.providerKeys[merged.provider]) {
+          merged.providerKeys = {
+            ...merged.providerKeys,
+            [merged.provider]: {
+              apiKey: merged.apiKey,
+              model: merged.model || "",
+              baseUrl: merged.baseUrl || providerInfo(merged.provider).baseUrl,
+            },
+          };
         }
         return merged;
       },

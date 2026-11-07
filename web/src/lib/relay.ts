@@ -55,7 +55,16 @@ export const relayChat = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000);
+    const raw = (body: BodyInit, init?: ResponseInit) =>
+      new Response(body, {
+        ...init,
+        headers: { ...(init?.headers ?? {}), "x-tss-raw": "true" },
+      });
     try {
+      const systemPrompt =
+        "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.";
+      const messages = [{ role: "system", content: systemPrompt }, ...data.messages];
+
       if (data.provider === "anthropic") {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -67,21 +76,61 @@ export const relayChat = createServerFn({ method: "POST" })
           },
           body: JSON.stringify({
             model: data.model,
-            max_tokens: 800,
-            system:
-              "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer the question using only what is written.",
+            max_tokens: 2048,
+            system: systemPrompt,
             messages: data.messages,
+            stream: true,
           }),
         });
-        const json = (await res.json()) as {
-          error?: { message?: string };
-          content?: { text?: string }[];
-        };
         if (!res.ok) {
-          return { ok: false as const, error: json.error?.message || `Upstream ${res.status}` };
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: { message?: string };
+          };
+          return raw(
+            JSON.stringify({ ok: false, error: json.error?.message || `Upstream ${res.status}` }),
+            { status: res.status }
+          );
         }
-        const text = json.content?.map((c) => c.text || "").join("\n").trim() || "";
-        return { ok: true as const, text };
+
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          async start(streamController) {
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            try {
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? "";
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith("data:")) continue;
+                  const payload = trimmed.slice(5).trim();
+                  try {
+                    const obj = JSON.parse(payload) as {
+                      type?: string;
+                      delta?: { text?: string };
+                    };
+                    if (obj.type === "content_block_delta" && obj.delta?.text) {
+                      streamController.enqueue(encoder.encode(obj.delta.text));
+                    }
+                  } catch {
+                    // Ignore non-JSON/control lines
+                  }
+                }
+              }
+            } finally {
+              reader.releaseLock();
+              streamController.close();
+            }
+          },
+        });
+        return raw(stream, {
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
       }
 
       const root = ENDPOINTS[data.provider] ?? data.baseUrl.replace(/\/$/, "");
@@ -94,26 +143,59 @@ export const relayChat = createServerFn({ method: "POST" })
         },
         body: JSON.stringify({
           model: data.model,
-          messages: [
-            {
-              role: "system",
-              content:
-                "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.",
-            },
-            ...data.messages,
-          ],
+          messages,
+          stream: true,
         }),
       });
-      const json = (await res.json().catch(() => ({}))) as unknown;
       if (!res.ok) {
-        return { ok: false as const, error: upstreamError(json) || `Upstream ${res.status}` };
+        const json = (await res.json().catch(() => ({}))) as unknown;
+        return raw(
+          JSON.stringify({ ok: false, error: upstreamError(json) || `Upstream ${res.status}` }),
+          { status: res.status }
+        );
       }
-      const body = json as { choices?: { message?: { content?: string } }[] };
-      const text = body.choices?.[0]?.message?.content?.trim() || "";
-      return { ok: true as const, text };
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) continue;
+                const payload = trimmed.slice(5).trim();
+                if (payload === "[DONE]") continue;
+                try {
+                  const obj = JSON.parse(payload) as {
+                    choices?: { delta?: { content?: string } }[];
+                  };
+                  const content = obj.choices?.[0]?.delta?.content;
+                  if (content) controller.enqueue(encoder.encode(content));
+                } catch {
+                  // Ignore malformed SSE lines.
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+            controller.close();
+          }
+        },
+      });
+      return raw(stream, {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Relay failed";
-      return { ok: false as const, error: message };
+      return raw(JSON.stringify({ ok: false, error: message }), { status: 500 });
     } finally {
       clearTimeout(timer);
     }

@@ -15,6 +15,7 @@ import {
   Trash2,
   Upload,
   X,
+  Copy,
   type LucideProps,
 } from "lucide-react";
 
@@ -131,4 +132,8 @@ export function MarkFileText({ className }: Props) {
 
 export function MarkX({ className }: Props) {
   return <X className={className} {...iconProps} aria-hidden />;
+}
+
+export function MarkCopy({ className }: Props) {
+  return <Copy className={className} {...iconProps} aria-hidden />;
 }
