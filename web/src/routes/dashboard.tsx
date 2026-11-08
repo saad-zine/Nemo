@@ -10,7 +10,8 @@ import {
   YAxis,
 } from "recharts";
 import type { Activity } from "@/lib/store";
-import { sampleData } from "@/lib/sample-data";
+import type { Hit, EntityKind } from "@/lib/anonymize";
+import { useVault } from "@/lib/store";
 
 export const Route = createFileRoute("/dashboard")({ component: Dashboard });
 
@@ -24,24 +25,25 @@ const RANGES = [
 type RangeKey = (typeof RANGES)[number]["key"];
 
 function Dashboard() {
-  const sample = useMemo(() => sampleData(365), []);
+  const activity = useVault((s) => s.activity);
+  const ledger = useVault((s) => s.ledger);
   const [range, setRange] = useState<RangeKey>("30");
   const active = RANGES.find((r) => r.key === range) ?? RANGES[2];
 
   const cutoff = useMemo(() => Date.now() - active.days * 86_400_000, [active.days]);
-  const activity = useMemo(
-    () => sample.activity.filter((a) => a.at >= cutoff),
-    [sample.activity, cutoff],
+  const recent = useMemo(
+    () => activity.filter((a) => a.at >= cutoff),
+    [activity, cutoff],
   );
 
-  const entities = activity.reduce((sum, a) => sum + a.entities, 0);
-  const documents = activity.filter((a) => a.kind === "document");
-  const chats = activity.filter((a) => a.kind === "chat");
+  const entities = recent.reduce((sum, a) => sum + a.entities, 0);
+  const documents = recent.filter((a) => a.kind === "document");
+  const chats = recent.filter((a) => a.kind === "chat");
   const documentCount = documents.length;
   const messageCount = chats.length;
   const docEntities = documents.reduce((sum, a) => sum + a.entities, 0);
   const chatEntities = chats.reduce((sum, a) => sum + a.entities, 0);
-  const kinds = sample.kinds.filter((k) => k.count > 0);
+  const kinds = kindCounts(ledger).filter((k) => k.count > 0);
 
   const series = useMemo(
     () => (active.days >= 365 ? bucketMonths(activity, 12) : bucketDays(activity, active.days)),
@@ -160,7 +162,7 @@ function Dashboard() {
               <h2 className="text-sm font-medium">Ledger breakdown</h2>
               <ul className="mt-3 space-y-2.5">
                 {kinds.slice(0, 7).map((k) => {
-                  const count = Math.round((k.count / Math.max(1, sample.entities)) * entities);
+                  const count = entities ? k.count : 0;
                   return (
                     <li
                       key={k.kind}
@@ -401,11 +403,21 @@ function bucketMonths(activity: Activity[], months: number): Bucket[] {
       entities: hits.reduce((sum, a) => sum + a.entities, 0),
       documents: hits.filter((a) => a.kind === "document").length,
       messages: hits.filter((a) => a.kind === "chat").length,
-      label,
-      axis: label,
-      full: label,
-      today: i === 0,
+    label,
+    axis: label,
+    full: label,
+    today: i === 0,
     });
   }
   return rows;
+}
+
+function kindCounts(ledger: Hit[]): { kind: EntityKind; count: number }[] {
+  const counts = new Map<EntityKind, number>();
+  for (const h of ledger) {
+    counts.set(h.kind, (counts.get(h.kind) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count);
 }

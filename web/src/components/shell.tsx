@@ -141,7 +141,9 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return threads.filter((t) => !q || t.title.toLowerCase().includes(q));
+    return threads
+      .filter((t) => t.messages && t.messages.length > 0)
+      .filter((t) => !q || t.title.toLowerCase().includes(q));
   }, [threads, query]);
 
   return (

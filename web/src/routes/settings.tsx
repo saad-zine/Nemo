@@ -1,16 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { KeyRound, Keyboard, PanelLeft, SlidersHorizontal } from "lucide-react";
+import { KeyRound, Keyboard, Loader2, PanelLeft, SlidersHorizontal } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { MarkMoney, MarkSearch } from "@/components/marks";
 import { PROVIDERS, providerInfo, type Provider } from "@/lib/models";
 import { NAV_META, NAV_ORDER_DEFAULT, orderedNav, type NavKey } from "@/lib/nav";
+import { relayModels } from "@/lib/relay";
 import { prettyShortcut, shortcutFromEvent } from "@/lib/shortcuts";
-import { useVault, type AnonymizeScope, type KeySettings } from "@/lib/store";
+import { useVault, type AnonymizeScope, type KeySettings, type ProviderConfig } from "@/lib/store";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
-
-const CUSTOM = "__custom__";
 
 const SCOPES: { id: AnonymizeScope; label: string; note: string }[] = [
   { id: "both", label: "Prompt and files", note: "Anonymize the message and any attached text." },
@@ -42,7 +42,10 @@ function SettingsPage() {
       anonymizeShortcut: s.anonymizeShortcut,
     })),
   );
+  const providerKeys = useVault((s) => s.providerKeys);
   const saveKey = useVault((s) => s.saveKey);
+  const saveProviderKey = useVault((s) => s.saveProviderKey);
+  const activateProvider = useVault((s) => s.activateProvider);
   const navOrder = useVault((s) => s.navOrder);
   const setNavOrder = useVault((s) => s.setNavOrder);
   const setFullAccessModalOpen = useVault((s) => s.setFullAccessModalOpen);
@@ -53,12 +56,14 @@ function SettingsPage() {
   // Edits stay local until Save; the persisted settings only change on submit.
   const [draft, setDraft] = useState<KeySettings>(saved);
   const [status, setStatus] = useState<"idle" | "saved">("idle");
-  const [customModel, setCustomModel] = useState(
-    () => !providerInfo(saved.provider).models.includes(saved.model),
-  );
   const [recording, setRecording] = useState(false);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Provider>(saved.provider);
+  const [expanded, setExpanded] = useState<Provider | null>(saved.provider);
+  const [providerDrafts, setProviderDrafts] = useState<Partial<Record<Provider, ProviderConfig>>>({});
+  const [fetchedModels, setFetchedModels] = useState<Partial<Record<Provider, string[]>>>({});
+  const [fetching, setFetching] = useState<Provider | null>(null);
+  const [fetchError, setFetchError] = useState<Partial<Record<Provider, string>>>({});
+  const [providerStatus, setProviderStatus] = useState<Partial<Record<Provider, string>>>({});
 
   // The store rehydrates from localStorage after the first render; pick that up once.
   const hydrated = useVault.persist?.hasHydrated?.() ?? true;
@@ -74,9 +79,84 @@ function SettingsPage() {
       anonymizeShortcut: current.anonymizeShortcut,
     };
     setDraft(next);
-    setCustomModel(!providerInfo(next.provider).models.includes(next.model));
     setExpanded(next.provider);
   }, [hydrated]);
+
+  function modelsFor(p: Provider): string[] {
+    return fetchedModels[p] ?? [];
+  }
+  function getProviderDraft(p: Provider): ProviderConfig {
+    if (providerDrafts[p]) return providerDrafts[p]!;
+    const savedCfg = providerKeys[p];
+    if (savedCfg) return savedCfg;
+    const info = providerInfo(p);
+    return { apiKey: "", model: "", baseUrl: info.baseUrl };
+  }
+  function updateProviderDraft(p: Provider, patch: Partial<ProviderConfig>) {
+    const next = { ...getProviderDraft(p), ...patch };
+    setProviderDrafts((d) => ({ ...d, [p]: next }));
+    setProviderStatus((s) => ({ ...s, [p]: "" }));
+    saveProviderKey(p, next);
+    if (saved.provider === p) {
+      saveKey({
+        ...saved,
+        apiKey: next.apiKey,
+        model: next.model || saved.model,
+        baseUrl: next.baseUrl || saved.baseUrl,
+      });
+    }
+  }
+  async function fetchProviderModels(p: Provider) {
+    const cfg = getProviderDraft(p);
+    if (cfg.apiKey.trim().length < 8) {
+      setFetchError((e) => ({ ...e, [p]: "Enter an API key first." }));
+      return;
+    }
+    setFetching(p);
+    setFetchError((e) => ({ ...e, [p]: "" }));
+    try {
+      const result = await relayModels({
+        data: {
+          provider: p,
+          apiKey: cfg.apiKey.trim(),
+          baseUrl: cfg.baseUrl || providerInfo(p).baseUrl,
+        },
+      });
+      if (!result.ok) {
+        setFetchError((e) => ({ ...e, [p]: result.error || "Could not fetch models." }));
+      } else {
+        setFetchedModels((m) => ({ ...m, [p]: result.models }));
+        setFetchError((e) => ({ ...e, [p]: "" }));
+        if (result.models.length > 0 && !cfg.model.trim()) {
+          updateProviderDraft(p, { model: result.models[0] });
+        }
+      }
+    } catch (err) {
+      setFetchError((e) => ({
+        ...e,
+        [p]: err instanceof Error ? err.message : "Could not fetch models.",
+      }));
+    } finally {
+      setFetching(null);
+    }
+  }
+  function saveThisProvider(p: Provider) {
+    const cfg = getProviderDraft(p);
+    saveProviderKey(p, cfg);
+    if (saved.provider === p) {
+      activateProvider(p);
+    }
+    setProviderStatus((s) => ({ ...s, [p]: "Saved" }));
+    setTimeout(() => setProviderStatus((s) => ({ ...s, [p]: "" })), 2200);
+  }
+  function makeActive(p: Provider) {
+    const cfg = getProviderDraft(p);
+    saveProviderKey(p, cfg);
+    activateProvider(p);
+    setDraft((d) => ({ ...d, provider: p, apiKey: cfg.apiKey, model: cfg.model, baseUrl: cfg.baseUrl }));
+    setProviderStatus((s) => ({ ...s, [p]: "Active" }));
+    setTimeout(() => setProviderStatus((s) => ({ ...s, [p]: "" })), 2200);
+  }
 
   useEffect(() => {
     if (status !== "saved") return;
@@ -84,7 +164,6 @@ function SettingsPage() {
     return () => window.clearTimeout(t);
   }, [status]);
 
-  const info = providerInfo(draft.provider);
   const dirty = (Object.keys(draft) as (keyof KeySettings)[]).some((k) => draft[k] !== saved[k]);
   const update = (patch: Partial<KeySettings>) => {
     setDraft((d) => ({ ...d, ...patch }));
@@ -120,15 +199,19 @@ function SettingsPage() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [recording]);
 
-  function pickProvider(id: Provider) {
-    const next = providerInfo(id);
-    update({ provider: id, model: next.models[0] ?? "", baseUrl: next.baseUrl });
-    setCustomModel(next.models.length === 0);
+  function chooseProvider(id: Provider) {
+    setExpanded((cur) => (cur === id ? null : id));
   }
 
-  function chooseProvider(id: Provider) {
-    setExpanded(id);
-    if (draft.provider !== id) pickProvider(id);
+  function handleToggle(pId: Provider) {
+    const cfg = getProviderDraft(pId);
+    const keyExists = Boolean(providerKeys[pId]?.apiKey?.trim() || cfg.apiKey.trim());
+    makeActive(pId);
+    if (!keyExists) {
+      setExpanded(pId);
+    } else {
+      setExpanded((cur) => (cur === pId ? null : cur));
+    }
   }
 
   function save(e: React.FormEvent) {
@@ -187,8 +270,12 @@ function SettingsPage() {
 
                 <div className="divide-y divide-line/60">
                   {filtered.map((p) => {
-                    const on = draft.provider === p.id;
+                    const on = saved.provider === p.id;
                     const open = expanded === p.id;
+                    const pd = getProviderDraft(p.id);
+                    const hasKey = Boolean(providerKeys[p.id]?.apiKey?.trim() || pd.apiKey?.trim());
+                    const models = modelsFor(p.id);
+                    const pInfo = providerInfo(p.id);
                     return (
                       <div key={p.id}>
                         <div className="flex items-center gap-2 pr-3">
@@ -196,112 +283,166 @@ function SettingsPage() {
                             type="button"
                             onClick={() => chooseProvider(p.id)}
                             aria-expanded={open}
-                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none focus-visible:bg-raised/40"
+                            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left outline-none focus-visible:bg-raised/40 cursor-pointer"
                           >
                             <span className="min-w-0 flex-1">
                               <span className="flex items-center gap-2">
                                 <span className="text-sm font-bold text-fg">{p.label}</span>
-                                {saved.provider === p.id && (
+                                {on && (
+                                  <span className="rounded-full bg-lime/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-lime uppercase">
+                                    Active
+                                  </span>
+                                )}
+                                {hasKey && !on && (
                                   <span className="text-[10px] tracking-wide text-faint uppercase">
-                                    In use
+                                    Key saved
                                   </span>
                                 )}
                               </span>
                               <span className="mt-0.5 block truncate text-xs text-muted">
-                                {p.family} · {p.note}
+                                {p.family}
                               </span>
                             </span>
                           </button>
                           <button
                             type="button"
-                            onClick={() => chooseProvider(p.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggle(p.id);
+                            }}
                             aria-pressed={on}
                             aria-label={on ? `${p.label} is active` : `Use ${p.label}`}
-                            className="shrink-0 rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+                            className="shrink-0 rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime cursor-pointer"
                           >
                             <Switch on={on} />
                           </button>
                         </div>
 
-                        {open && (
-                          <div className="space-y-4 border-t border-line/50 bg-surface/50 px-4 py-4">
-                            <div>
-                              <label
-                                htmlFor={`key-${p.id}`}
-                                className="text-xs tracking-wide text-faint uppercase"
-                              >
-                                API key
-                              </label>
-                              <input
-                                id={`key-${p.id}`}
-                                type="password"
-                                value={draft.apiKey}
-                                autoComplete="off"
-                                onChange={(e) => update({ apiKey: e.target.value })}
-                                placeholder={info.keyHint}
-                                className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
-                              />
-                            </div>
+                        <AnimatePresence initial={false}>
+                          {open && (
+                            <motion.div
+                              key={`drawer-${p.id}`}
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-4 border-t border-line/50 bg-surface/50 px-4 py-4">
+                                <div>
+                                  <label
+                                    htmlFor={`key-${p.id}`}
+                                    className="text-xs tracking-wide text-faint uppercase"
+                                  >
+                                    API key
+                                  </label>
+                                  <input
+                                    id={`key-${p.id}`}
+                                    type="password"
+                                    value={pd.apiKey}
+                                    autoComplete="off"
+                                    onChange={(e) => updateProviderDraft(p.id, { apiKey: e.target.value })}
+                                    placeholder={pInfo.keyHint}
+                                    className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
+                                  />
+                                </div>
 
-                            <div>
-                              <label
-                                htmlFor={`model-${p.id}`}
-                                className="text-xs tracking-wide text-faint uppercase"
-                              >
-                                Model
-                              </label>
-                              {info.models.length > 0 && (
-                                <select
-                                  id={`model-${p.id}`}
-                                  value={customModel ? CUSTOM : draft.model}
-                                  onChange={(e) => {
-                                    if (e.target.value === CUSTOM) {
-                                      setCustomModel(true);
-                                      update({ model: "" });
-                                    } else {
-                                      setCustomModel(false);
-                                      update({ model: e.target.value });
-                                    }
-                                  }}
-                                  className="mt-2 w-full appearance-none rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
-                                >
-                                  {info.models.map((m) => (
-                                    <option key={m} value={m}>
-                                      {m}
-                                    </option>
-                                  ))}
-                                  <option value={CUSTOM}>Custom model…</option>
-                                </select>
-                              )}
-                              {(customModel || info.models.length === 0) && (
-                                <input
-                                  value={draft.model}
-                                  onChange={(e) => update({ model: e.target.value })}
-                                  placeholder="Exact model id, e.g. my-model-v2"
-                                  aria-label="Custom model id"
-                                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
-                                />
-                              )}
-                            </div>
+                                <div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <label
+                                      htmlFor={`model-${p.id}`}
+                                      className="text-xs tracking-wide text-faint uppercase"
+                                    >
+                                      Model
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => void fetchProviderModels(p.id)}
+                                      disabled={fetching === p.id}
+                                      className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-fg hover:bg-raised disabled:opacity-50"
+                                    >
+                                      {fetching === p.id ? (
+                                        <Loader2 className="size-3 animate-spin" />
+                                      ) : null}
+                                      {fetching === p.id ? "Fetching…" : "Fetch models"}
+                                    </button>
+                                  </div>
+                                  {fetchError[p.id] && (
+                                    <p className="mt-1.5 text-[11px] text-danger">{fetchError[p.id]}</p>
+                                  )}
+                                  {models.length > 0 ? (
+                                    <select
+                                      id={`model-${p.id}`}
+                                      value={pd.model && models.includes(pd.model) ? pd.model : pd.model || ""}
+                                      onChange={(e) => updateProviderDraft(p.id, { model: e.target.value })}
+                                      className="mt-2 w-full appearance-none rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
+                                    >
+                                      {!pd.model && <option value="">Select a model…</option>}
+                                      {pd.model && !models.includes(pd.model) && (
+                                        <option value={pd.model}>{pd.model} (current)</option>
+                                      )}
+                                      {models.map((m) => (
+                                        <option key={m} value={m}>
+                                          {m}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      id={`model-${p.id}`}
+                                      value={pd.model}
+                                      onChange={(e) => updateProviderDraft(p.id, { model: e.target.value })}
+                                      placeholder="Enter model ID or click Fetch models"
+                                      className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
+                                    />
+                                  )}
+                                  <p className="mt-1.5 text-[11px] text-faint">
+                                    {models.length > 0
+                                      ? `${models.length} models from provider`
+                                      : "Fetch models from your provider for the real list."}
+                                  </p>
+                                </div>
 
-                            {draft.provider === "compatible" && (
-                              <div>
-                                <label
-                                  htmlFor={`base-${p.id}`}
-                                  className="text-xs tracking-wide text-faint uppercase"
-                                >
-                                  Base URL
-                                </label>
-                                <input
-                                  id={`base-${p.id}`}
-                                  value={draft.baseUrl}
-                                  onChange={(e) => update({ baseUrl: e.target.value })}
-                                  className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
-                                />
+                                {(p.id === "compatible") && (
+                                  <div>
+                                    <label
+                                      htmlFor={`base-${p.id}`}
+                                      className="text-xs tracking-wide text-faint uppercase"
+                                    >
+                                      Base URL
+                                    </label>
+                                    <input
+                                      id={`base-${p.id}`}
+                                      value={pd.baseUrl}
+                                      onChange={(e) => updateProviderDraft(p.id, { baseUrl: e.target.value })}
+                                      className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-fg"
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => saveThisProvider(p.id)}
+                                    className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-bold text-fg hover:bg-raised"
+                                  >
+                                    Save key
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => makeActive(p.id)}
+                                    className="rounded-lg bg-lime px-3 py-1.5 text-xs font-bold text-ink hover:opacity-90"
+                                  >
+                                    Use this provider
+                                  </button>
+                                  {providerStatus[p.id] && (
+                                    <span className="text-[11px] text-muted">{providerStatus[p.id]}</span>
+                                  )}
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     );
                   })}
@@ -487,7 +628,6 @@ function SettingsPage() {
               disabled={!dirty}
               onClick={() => {
                 setDraft(saved);
-                setCustomModel(!providerInfo(saved.provider).models.includes(saved.model));
                 setExpanded(saved.provider);
                 setStatus("idle");
               }}

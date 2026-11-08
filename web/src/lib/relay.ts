@@ -68,16 +68,6 @@ function readableError(message: string) {
   );
 }
 
-async function request(url: string, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -85,99 +75,180 @@ function sleep(ms: number) {
 export const relayChat = createServerFn({ method: "POST" })
   .validator(schema)
   .handler(async ({ data }) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    const raw = (body: BodyInit, init?: ResponseInit) =>
+      new Response(body, {
+        ...init,
+        headers: { ...(init?.headers ?? {}), "x-tss-raw": "true" },
+      });
     try {
+      const systemPrompt =
+        "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.";
+      const messages = [{ role: "system", content: systemPrompt }, ...data.messages];
+
       if (data.provider === "anthropic") {
-        const res = await request(
-          "https://api.anthropic.com/v1/messages",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-api-key": data.apiKey,
-              "anthropic-version": "2023-06-01",
-            },
-            body: JSON.stringify({
-              model: data.model,
-              max_tokens: 800,
-              system:
-                "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer the question using only what is written.",
-              messages: data.messages,
-            }),
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": data.apiKey,
+            "anthropic-version": "2023-06-01",
           },
-          25000,
-        );
-        const json = (await res.json()) as {
-          error?: { message?: string };
-          content?: { text?: string }[];
-        };
+          body: JSON.stringify({
+            model: data.model,
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages: data.messages,
+            stream: true,
+          }),
+        });
         if (!res.ok) {
-          return { ok: false as const, error: json.error?.message || `Upstream ${res.status}` };
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: { message?: string };
+          };
+          return raw(
+            JSON.stringify({ ok: false, error: json.error?.message || `Upstream ${res.status}` }),
+            { status: res.status }
+          );
         }
-        const text = json.content?.map((c) => c.text || "").join("\n").trim() || "";
-        return { ok: true as const, text };
+
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          async start(streamController) {
+            const reader = res.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            try {
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? "";
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith("data:")) continue;
+                  const payload = trimmed.slice(5).trim();
+                  try {
+                    const obj = JSON.parse(payload) as {
+                      type?: string;
+                      delta?: { text?: string };
+                    };
+                    if (obj.type === "content_block_delta" && obj.delta?.text) {
+                      streamController.enqueue(encoder.encode(obj.delta.text));
+                    }
+                  } catch {
+                    // Ignore non-JSON/control lines
+                  }
+                }
+              }
+            } finally {
+              reader.releaseLock();
+              streamController.close();
+            }
+          },
+        });
+        return raw(stream, {
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
       }
 
       const root = ENDPOINTS[data.provider] ?? data.baseUrl.replace(/\/$/, "");
+      let res: Response | undefined;
       let lastError = "Relay failed";
 
       // gpt-oss occasionally emits malformed Harmony output that the provider
       // rejects; the same request usually succeeds when replayed.
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          const res = await request(
-            `${root}/chat/completions`,
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                authorization: `Bearer ${data.apiKey}`,
-              },
-              body: JSON.stringify({
-                model: data.model,
-                ...(data.provider === "groq" ? { max_completion_tokens: 1024 } : {}),
-                messages: [
-                  {
-                    role: "system",
-                    content:
-                      "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.",
-                  },
-                  ...data.messages,
-                ],
-              }),
+          res = await fetch(`${root}/chat/completions`, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${data.apiKey}`,
             },
-            25000,
-          );
-          const json = (await res.json().catch(() => ({}))) as unknown;
-          if (!res.ok) {
-            const message = upstreamError(json) || `Upstream ${res.status}`;
-            lastError = message;
-            const retryable =
-              res.status === 429 || res.status >= 500 || isParseFailure(message, json);
-            if (retryable && attempt < 2) {
-              await sleep(400 * (attempt + 1));
-              continue;
-            }
-            return { ok: false as const, error: readableError(message) };
-          }
-          const body = json as { choices?: { message?: { content?: string } }[] };
-          const text = body.choices?.[0]?.message?.content?.trim() || "";
-          return { ok: true as const, text };
+            body: JSON.stringify({
+              model: data.model,
+              ...(data.provider === "groq" ? { max_completion_tokens: 1024 } : {}),
+              messages,
+              stream: true,
+            }),
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Relay failed";
           lastError = message;
-          const aborted = err instanceof Error && err.name === "AbortError";
-          if (!aborted && attempt < 2) {
+          if (attempt < 2) {
             await sleep(400 * (attempt + 1));
             continue;
           }
-          return { ok: false as const, error: message };
+          return raw(JSON.stringify({ ok: false, error: message }), { status: 500 });
         }
+
+        if (res.ok) break;
+
+        const json = (await res.json().catch(() => ({}))) as unknown;
+        lastError = upstreamError(json) || `Upstream ${res.status}`;
+        const retryable =
+          res.status === 429 || res.status >= 500 || isParseFailure(lastError, json);
+        if (!retryable || attempt === 2) {
+          return raw(JSON.stringify({ ok: false, error: readableError(lastError) }), {
+            status: res.status,
+          });
+        }
+        await sleep(400 * (attempt + 1));
       }
 
-      return { ok: false as const, error: readableError(lastError) };
+      if (!res || !res.ok) {
+        return raw(JSON.stringify({ ok: false, error: readableError(lastError) }), { status: 502 });
+      }
+
+      const upstream = res;
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(streamController) {
+          const reader = upstream.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) continue;
+                const payload = trimmed.slice(5).trim();
+                if (payload === "[DONE]") continue;
+                try {
+                  const obj = JSON.parse(payload) as {
+                    choices?: { delta?: { content?: string } }[];
+                  };
+                  const content = obj.choices?.[0]?.delta?.content;
+                  if (content) streamController.enqueue(encoder.encode(content));
+                } catch {
+                  // Ignore malformed SSE lines.
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+            streamController.close();
+          }
+        },
+      });
+      return raw(stream, {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Relay failed";
-      return { ok: false as const, error: message };
+      return raw(JSON.stringify({ ok: false, error: readableError(message) }), { status: 500 });
+    } finally {
+      clearTimeout(timer);
     }
   });
 
