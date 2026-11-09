@@ -50,6 +50,28 @@ function upstreamError(json: unknown): string | undefined {
   return undefined;
 }
 
+const PARSE_FAILURE = /parsing failed|could not be parsed|output_parse_failed/i;
+
+function isParseFailure(message: string, json: unknown) {
+  const code = (json as { error?: { code?: unknown } } | undefined)?.error?.code;
+  return code === "output_parse_failed" || PARSE_FAILURE.test(message);
+}
+
+function readableError(message: string) {
+  if (/request too large|tokens per minute|\btpm\b/i.test(message)) {
+    return "This request is larger than the provider's rate limit. Start a new chat, remove large attachments, or switch model.";
+  }
+  if (!PARSE_FAILURE.test(message)) return message;
+  return (
+    "The provider could not parse the model's own output (a known Harmony quirk with gpt-oss on Groq). " +
+    "Retried automatically. If it persists, try again or switch model — for example llama-3.3-70b-versatile."
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const relayChat = createServerFn({ method: "POST" })
   .validator(schema)
   .handler(async ({ data }) => {
@@ -134,31 +156,60 @@ export const relayChat = createServerFn({ method: "POST" })
       }
 
       const root = ENDPOINTS[data.provider] ?? data.baseUrl.replace(/\/$/, "");
-      const res = await fetch(`${root}/chat/completions`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${data.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: data.model,
-          messages,
-          stream: true,
-        }),
-      });
-      if (!res.ok) {
+      let res: Response | undefined;
+      let lastError = "Relay failed";
+
+      // gpt-oss occasionally emits malformed Harmony output that the provider
+      // rejects; the same request usually succeeds when replayed.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          res = await fetch(`${root}/chat/completions`, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${data.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: data.model,
+              ...(data.provider === "groq" ? { max_completion_tokens: 1024 } : {}),
+              messages,
+              stream: true,
+            }),
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Relay failed";
+          lastError = message;
+          if (attempt < 2) {
+            await sleep(400 * (attempt + 1));
+            continue;
+          }
+          return raw(JSON.stringify({ ok: false, error: message }), { status: 500 });
+        }
+
+        if (res.ok) break;
+
         const json = (await res.json().catch(() => ({}))) as unknown;
-        return raw(
-          JSON.stringify({ ok: false, error: upstreamError(json) || `Upstream ${res.status}` }),
-          { status: res.status }
-        );
+        lastError = upstreamError(json) || `Upstream ${res.status}`;
+        const retryable =
+          res.status === 429 || res.status >= 500 || isParseFailure(lastError, json);
+        if (!retryable || attempt === 2) {
+          return raw(JSON.stringify({ ok: false, error: readableError(lastError) }), {
+            status: res.status,
+          });
+        }
+        await sleep(400 * (attempt + 1));
       }
 
+      if (!res || !res.ok) {
+        return raw(JSON.stringify({ ok: false, error: readableError(lastError) }), { status: 502 });
+      }
+
+      const upstream = res;
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
-        async start(controller) {
-          const reader = res.body!.getReader();
+        async start(streamController) {
+          const reader = upstream.body!.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
           try {
@@ -178,7 +229,7 @@ export const relayChat = createServerFn({ method: "POST" })
                     choices?: { delta?: { content?: string } }[];
                   };
                   const content = obj.choices?.[0]?.delta?.content;
-                  if (content) controller.enqueue(encoder.encode(content));
+                  if (content) streamController.enqueue(encoder.encode(content));
                 } catch {
                   // Ignore malformed SSE lines.
                 }
@@ -186,7 +237,7 @@ export const relayChat = createServerFn({ method: "POST" })
             }
           } finally {
             reader.releaseLock();
-            controller.close();
+            streamController.close();
           }
         },
       });
@@ -195,7 +246,7 @@ export const relayChat = createServerFn({ method: "POST" })
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Relay failed";
-      return raw(JSON.stringify({ ok: false, error: message }), { status: 500 });
+      return raw(JSON.stringify({ ok: false, error: readableError(message) }), { status: 500 });
     } finally {
       clearTimeout(timer);
     }

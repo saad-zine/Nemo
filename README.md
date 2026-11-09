@@ -8,6 +8,7 @@ Local-first chat wall for anonymizing documents and texts. Paste text or upload 
 - **Direct upload** — drop a `.txt` file (or paste text) and download the anonymized copy.
 - **De-detection** — swap tokens back to original values in replies, locally, after the model responds.
 - **Document text processing** — read and anonymize text files client-side.
+- **Local OCR** — extract text from images and scanned PDFs with Tesseract.js, then anonymize it. Only the OCR language model is downloaded; the document stays in the browser.
 - **Local-first** — detection and redaction happen in this browser. Your API key stays in local storage.
 
 ## Install

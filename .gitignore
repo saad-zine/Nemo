@@ -28,6 +28,8 @@ data/
 tests/__pycache__/
 *.log
 .hf-cache/
+.omo/
+*.traineddata
 
 # Environment / secrets
 .env

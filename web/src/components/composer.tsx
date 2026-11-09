@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { MarkFileText, MarkIncognito, MarkPlus, MarkUpload, MarkX } from "@/components/marks";
 import { queueDraft } from "@/lib/draft";
-import { ACCEPT, formatSize, readable, readTextFile } from "@/lib/files";
+import { ACCEPT, extractText, formatSize, readable } from "@/lib/files";
 import { PROVIDERS, providerInfo } from "@/lib/models";
+import { ocrStageLabel } from "@/lib/ocr";
 import { relayModels } from "@/lib/relay";
 import { eventMatchesShortcut, prettyShortcut } from "@/lib/shortcuts";
 import { useVault, type Attachment } from "@/lib/store";
@@ -30,6 +31,7 @@ export function Composer({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [ocrNote, setOcrNote] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const modelListRef = useRef<HTMLDivElement>(null);
   const model = useVault((s) => s.model);
@@ -111,6 +113,7 @@ export function Composer({
     if (list.length === 0) return;
     const next: Attachment[] = [];
     let error = "";
+    setOcrNote("");
     for (const file of list) {
       const problem = readable(file);
       if (problem) {
@@ -118,7 +121,9 @@ export function Composer({
         continue;
       }
       try {
-        const text = await readTextFile(file);
+        const text = await extractText(file, (progress) => {
+          setOcrNote(`${file.name} · ${ocrStageLabel(progress.stage, progress.page, progress.pages)}`);
+        });
         next.push({
           id: Math.random().toString(36).slice(2, 10),
           name: file.name,
@@ -127,6 +132,8 @@ export function Composer({
         });
       } catch (err) {
         error = err instanceof Error ? err.message : "Couldn't read that file.";
+      } finally {
+        setOcrNote("");
       }
     }
     if (next.length > 0) {
@@ -223,6 +230,11 @@ export function Composer({
               ))}
             </div>
           )}
+          {ocrNote && (
+            <p role="status" className="mb-2 text-[11px] text-muted">
+              {ocrNote}…
+            </p>
+          )}
           {fileError && (
             <p role="alert" className="mb-2 text-[11px] text-danger">
               {fileError}
@@ -313,11 +325,12 @@ export function Composer({
                           Drop files or browse
                         </span>
                         <span className="text-[11px] text-faint">
-                          .txt .md .csv .json .log · up to 2 MB
+                          .txt .md .csv .json · 2 MB · .png .jpg .pdf · 10 MB
                         </span>
                       </button>
                       <p className="px-2 pt-2 text-[11px] leading-relaxed text-faint">
-                        Files are read on this device and sent as text with your prompt.
+                        Images and scanned PDFs are read with local OCR. Files never leave this
+                        device.
                       </p>
                     </motion.div>
                   )}

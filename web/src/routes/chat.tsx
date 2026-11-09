@@ -119,11 +119,13 @@ function Relay() {
       hits: allHits,
       attachments: files.length > 0 ? files : undefined,
     };
-    const history = incognito
-      ? [...ephemeral, userMsg]
-      : activeThread
-        ? [...activeThread.messages, userMsg]
-        : [...pendingMessages, userMsg];
+    const history = (
+      incognito
+        ? [...ephemeral, userMsg]
+        : activeThread
+          ? [...activeThread.messages, userMsg]
+          : [...pendingMessages, userMsg]
+    ).filter((message) => !message.held);
 
     if (incognito) {
       setEphemeral((prev) => [...prev, userMsg]);
@@ -172,17 +174,13 @@ function Relay() {
           apiKey: apiKey.trim(),
           model,
           baseUrl: baseUrl || "https://api.openai.com/v1",
-          messages: history.map((m) => ({
-            role: m.role,
-            content: wire(m),
-          })),
+          messages: buildWire(history, provider),
         },
       });
       if (!response.ok) {
         const errorBody = (await response.json().catch(() => ({}))) as {
           error?: string;
         };
-        setError(errorBody.error || `Upstream ${response.status}`);
         const held: ChatMessage = {
           id: Math.random().toString(36).slice(2, 10),
           role: "assistant",
@@ -206,7 +204,6 @@ function Relay() {
             error?: string;
           };
           if (json.ok === false) {
-            setError(json.error || "Request failed");
             const held: ChatMessage = {
               id: Math.random().toString(36).slice(2, 10),
               role: "assistant",
@@ -589,15 +586,41 @@ function Relay() {
   );
 }
 
-function wire(message: ChatMessage) {
+// Provider input budgets in characters. Groq's free tier caps gpt-oss at 8k TPM,
+// so its history has to stay much smaller than the others.
+const WIRE_BUDGET: Record<string, number> = { groq: 16000 };
+const DEFAULT_WIRE_BUDGET = 60000;
+
+function wire(message: ChatMessage, limit: number, withFiles: boolean) {
   const text = message.masked || message.content;
-  if (message.role === "user" && message.attachments?.length) {
-    const files = message.attachments
-      .map((file) => `--- ${file.name} ---\n${file.masked || file.content}`)
-      .join("\n\n");
-    return [text, files].filter(Boolean).join("\n\n").slice(0, 60000);
+  if (message.role !== "user" || !message.attachments?.length) {
+    return text.slice(0, limit);
   }
-  return text.slice(0, 60000);
+  if (!withFiles) {
+    const names = message.attachments.map((file) => `[attached file: ${file.name}]`).join("\n");
+    return [text, names].filter(Boolean).join("\n\n").slice(0, limit);
+  }
+  const files = message.attachments
+    .map((file) => `--- ${file.name} ---\n${(file.masked || file.content).slice(0, limit)}`)
+    .join("\n\n");
+  return [text, files].filter(Boolean).join("\n\n").slice(0, limit);
+}
+
+// Keep the newest exchange and drop old attachments/content until the request fits.
+function buildWire(history: ChatMessage[], provider: string) {
+  const budget = WIRE_BUDGET[provider] ?? DEFAULT_WIRE_BUDGET;
+  const out: { role: "user" | "assistant"; content: string }[] = [];
+  let remaining = budget;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (remaining <= 0) break;
+    const message = history[index];
+    const latest = index === history.length - 1;
+    const content = wire(message, remaining, latest);
+    if (!content.trim()) continue;
+    out.unshift({ role: message.role, content });
+    remaining -= content.length;
+  }
+  return out;
 }
 
 function uniqueHits(hits: Hit[]) {

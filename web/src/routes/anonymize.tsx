@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { MarkUpload } from "@/components/marks";
 import { SAMPLE, anonymize } from "@/lib/anonymize";
-import { ACCEPT, formatSize, readable } from "@/lib/files";
+import { ACCEPT, extractText, formatSize, readable } from "@/lib/files";
+import { ocrStageLabel } from "@/lib/ocr";
 import { useVault } from "@/lib/store";
 
 export const Route = createFileRoute("/anonymize")({ component: Anonymize });
@@ -12,6 +13,7 @@ function Anonymize() {
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState(0);
   const [fileError, setFileError] = useState("");
+  const [ocrNote, setOcrNote] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const ledger = useVault((s) => s.ledger);
@@ -23,22 +25,27 @@ function Anonymize() {
   const result = useMemo(() => anonymize(source, ledger, strict), [source, ledger, strict]);
   const localHits = result.hits.filter((h) => source.includes(h.value));
 
-  function onFile(file: File) {
+  async function onFile(file: File) {
     const problem = readable(file);
     if (problem) {
       setFileError(problem);
       return;
     }
     setFileError("");
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSource(String(reader.result || ""));
+    setOcrNote("");
+    try {
+      const text = await extractText(file, (progress) => {
+        setOcrNote(`${ocrStageLabel(progress.stage, progress.page, progress.pages)}…`);
+      });
+      setSource(text);
       setFileName(file.name);
       setFileSize(file.size);
       setLogged(false);
-    };
-    reader.onerror = () => setFileError("Couldn't read that file.");
-    reader.readAsText(file);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : "Couldn't read that file.");
+    } finally {
+      setOcrNote("");
+    }
   }
 
   function clearSource() {
@@ -46,6 +53,7 @@ function Anonymize() {
     setFileName("");
     setFileSize(0);
     setFileError("");
+    setOcrNote("");
     setLogged(false);
   }
 
@@ -134,7 +142,7 @@ function Anonymize() {
             e.preventDefault();
             setDragOver(false);
             const f = e.dataTransfer.files?.[0];
-            if (f) onFile(f);
+            if (f) void onFile(f);
           }}
         >
           <input
@@ -145,7 +153,7 @@ function Anonymize() {
             aria-label="Upload a text file"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onFile(f);
+              if (f) void onFile(f);
               e.target.value = "";
             }}
           />
@@ -168,6 +176,11 @@ function Anonymize() {
               {fileSize > 0 && <span className="text-faint">{formatSize(fileSize)}</span>}
             </div>
           )}
+          {ocrNote && (
+            <p role="status" className="mx-6 mb-3 rounded-lg bg-raised/60 px-3 py-2 text-[12px] text-muted">
+              {ocrNote}
+            </p>
+          )}
           {fileError && (
             <p
               role="alert"
@@ -182,7 +195,7 @@ function Anonymize() {
                 <MarkUpload className="size-6 text-muted" />
                 <p className="mt-4 text-sm text-fg">Drop a file or paste text</p>
                 <p className="mt-1 text-[12px] text-faint">
-                  .txt .md .csv .json .log .html · up to 2 MB · read on this device
+                  text 2 MB · images/PDF 10 MB · OCR runs on this device
                 </p>
                 <button
                   type="button"
