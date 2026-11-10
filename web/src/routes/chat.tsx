@@ -22,6 +22,18 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const ENTER_FROM = { opacity: 0, y: 8, filter: "blur(4px)" };
 const ENTER_TO = { opacity: 1, y: 0, filter: "blur(0px)" };
 
+// Kryptos brand entrance: staggered line reveal with blur-to-sharp.
+const KRYPTO_EASE = [0.16, 1, 0.3, 1] as const;
+
+const KRYPTOS_ART = [
+  "██╗  ██╗██████╗ ██╗   ██╗██████╗ ████████╗ ██████╗ ███████╗",
+  "██║ ██╔╝██╔══██╗╚██╗ ██╔╝██╔══██╗╚══██╔══╝██╔═══██╗██╔════╝",
+  "█████╔╝ ██████╔╝ ╚████╔╝ ██████╔╝   ██║   ██║   ██║███████╗",
+  "██╔═██╗ ██╔══██╗  ╚██╔╝  ██╔═══╝    ██║   ██║   ██║╚════██║",
+  "██║  ██╗██║  ██║   ██║   ██║        ██║   ╚██████╔╝███████║",
+  "╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝    ╚═════╝ ╚══════╝",
+];
+
 function Relay() {
   const threads = useVault((s) => s.threads);
   const activeId = useVault((s) => s.activeId);
@@ -50,7 +62,14 @@ function Relay() {
   const [incognito, setIncognito] = useState(false);
   const [ephemeral, setEphemeral] = useState<ChatMessage[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [kryptoVisible, setKryptoVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const messages = useMemo(
+    () => (incognito ? ephemeral : (thread ? thread.messages : pendingMessages)),
+    [incognito, ephemeral, thread, pendingMessages],
+  );
+  const empty = messages.length === 0;
 
   const autoAnonymizeUpcoming = thread
     ? (thread.autoAnonymize ?? false)
@@ -67,6 +86,16 @@ function Relay() {
   useEffect(() => {
     setPendingMessages([]);
   }, [activeId]);
+
+  // Trigger Kryptos entrance animation when chat becomes empty
+  useEffect(() => {
+    if (empty) {
+      setKryptoVisible(false);
+      // Small delay to allow re-trigger on re-entry
+      const timer = setTimeout(() => setKryptoVisible(true), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [empty]);
 
   async function send(draft: ComposerPayload) {
     const state = useVault.getState();
@@ -314,15 +343,10 @@ function Relay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const messages = useMemo(
-    () => (incognito ? ephemeral : (thread ? thread.messages : pendingMessages)),
-    [incognito, ephemeral, thread, pendingMessages],
-  );
   const userPrompts = useMemo(
     () => messages.filter((m) => m.role === "user"),
     [messages],
   );
-  const empty = messages.length === 0;
 
   // Auto-scroll to the newest message whenever the conversation changes.
   useEffect(() => {
@@ -451,11 +475,60 @@ function Relay() {
                     <MarkIncognito className="size-3.5" /> Incognito
                   </span>
                 )}
-                <p className="mt-5 max-w-md text-center text-sm leading-relaxed text-muted">
+                <motion.div
+                  role="img"
+                  aria-label="Kryptos"
+                  initial={false}
+                  animate={kryptoVisible ? "visible" : "hidden"}
+                  variants={{
+                    hidden: {},
+                    visible: { transition: reduce ? { duration: 0 } : { staggerChildren: 0.08 } },
+                  }}
+                  className="mt-5 flex flex-col items-center select-none text-fg"
+                  style={{ willChange: "transform, opacity, filter" }}
+                >
+                  {KRYPTOS_ART.map((line, i) => (
+                    <motion.pre
+                      key={i}
+                      aria-hidden
+                      variants={{
+                        hidden: reduce
+                          ? { opacity: 1, y: 0, filter: "blur(0px)" }
+                          : { opacity: 0, y: 12, filter: "blur(10px)" },
+                        visible: {
+                          opacity: 1,
+                          y: 0,
+                          filter: "blur(0px)",
+                          transition: reduce ? { duration: 0 } : { duration: 0.7, ease: KRYPTO_EASE },
+                        },
+                      }}
+                      className="krypto-sheen mx-0 my-[-3px] py-[3px] whitespace-pre font-mono leading-[1.05] text-[7px] sm:text-[10px] md:text-[13px]"
+                      style={{ fontFamily: '"JetBrains Mono","Fira Code",ui-monospace,Menlo,Consolas,monospace' }}
+                    >
+                      {line}
+                    </motion.pre>
+                  ))}
+                </motion.div>
+                <motion.p
+                  initial={false}
+                  animate={kryptoVisible ? "visible" : "hidden"}
+                  variants={{
+                    hidden: reduce ? { opacity: 1, y: 0, filter: "blur(0px)" } : { opacity: 0, y: 8, filter: "blur(4px)" },
+                    visible: {
+                      opacity: 1,
+                      y: 0,
+                      filter: "blur(0px)",
+                      transition: reduce
+                        ? { duration: 0 }
+                        : { delay: 0.95, duration: 0.45, ease: EASE },
+                    },
+                  }}
+                  className="mt-4 max-w-md text-center text-sm leading-relaxed text-muted"
+                >
                   {incognito
                     ? "This conversation stays in this tab and is never saved."
                     : "Ask a question, paste a note, or point at a file. Sensitive spans are stripped before anything reaches your model."}
-                </p>
+                </motion.p>
               </div>
             ) : (
               <Conversation className="mx-auto max-w-3xl gap-3 py-6">
