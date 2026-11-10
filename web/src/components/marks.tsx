@@ -1,4 +1,5 @@
 import {
+  Blend,
   BookOpen,
   CircleDollarSign,
   CircleUserRound,
@@ -69,6 +70,10 @@ export function MarkIncognito({ className }: Props) {
       <path d="M10.5 15.5a1.5 1.5 0 0 1 3 0" />
     </svg>
   );
+}
+
+export function MarkBlur({ className }: Props) {
+  return <Blend className={className} {...iconProps} aria-hidden />;
 }
 
 export function MarkNotes({ className }: Props) {
