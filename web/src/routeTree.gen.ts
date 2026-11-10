@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnonymizeRouteImport } from './routes/anonymize'
+import { Route as BlurRouteImport } from './routes/blur'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DocsRouteImport } from './routes/docs'
@@ -24,6 +25,11 @@ const IndexRoute = IndexRouteImport.update({
 const AnonymizeRoute = AnonymizeRouteImport.update({
   id: '/anonymize',
   path: '/anonymize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlurRoute = BlurRouteImport.update({
+  id: '/blur',
+  path: '/blur',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -50,6 +56,7 @@ const SettingsRoute = SettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/anonymize': typeof AnonymizeRoute
+  '/blur': typeof BlurRoute
   '/chat': typeof ChatRoute
   '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/anonymize': typeof AnonymizeRoute
+  '/blur': typeof BlurRoute
   '/chat': typeof ChatRoute
   '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/anonymize': typeof AnonymizeRoute
+  '/blur': typeof BlurRoute
   '/chat': typeof ChatRoute
   '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
@@ -74,13 +83,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/anonymize' | '/chat' | '/dashboard' | '/docs' | '/settings'
+  fullPaths:
+    | '/'
+    | '/anonymize'
+    | '/blur'
+    | '/chat'
+    | '/dashboard'
+    | '/docs'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/anonymize' | '/chat' | '/dashboard' | '/docs' | '/settings'
+  to:
+    | '/'
+    | '/anonymize'
+    | '/blur'
+    | '/chat'
+    | '/dashboard'
+    | '/docs'
+    | '/settings'
   id:
     | '__root__'
     | '/'
     | '/anonymize'
+    | '/blur'
     | '/chat'
     | '/dashboard'
     | '/docs'
@@ -90,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnonymizeRoute: typeof AnonymizeRoute
+  BlurRoute: typeof BlurRoute
   ChatRoute: typeof ChatRoute
   DashboardRoute: typeof DashboardRoute
   DocsRoute: typeof DocsRoute
@@ -110,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/anonymize'
       fullPath: '/anonymize'
       preLoaderRoute: typeof AnonymizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blur': {
+      id: '/blur'
+      path: '/blur'
+      fullPath: '/blur'
+      preLoaderRoute: typeof BlurRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -146,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnonymizeRoute: AnonymizeRoute,
+  BlurRoute: BlurRoute,
   ChatRoute: ChatRoute,
   DashboardRoute: DashboardRoute,
   DocsRoute: DocsRoute,

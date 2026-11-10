@@ -1,8 +1,9 @@
-export type NavKey = "dashboard" | "anonymize" | "docs" | "settings";
+export type NavKey = "dashboard" | "anonymize" | "blur" | "docs" | "settings";
 
 export const NAV_META: Record<NavKey, { to: string; label: string }> = {
   dashboard: { to: "/dashboard", label: "Dashboard" },
   anonymize: { to: "/anonymize", label: "Anonymize" },
+  blur: { to: "/blur", label: "Face blur" },
   docs: { to: "/docs", label: "How it works" },
   settings: { to: "/settings", label: "Settings" },
 };
@@ -10,6 +11,7 @@ export const NAV_META: Record<NavKey, { to: string; label: string }> = {
 export const NAV_ORDER_DEFAULT: NavKey[] = [
   "dashboard",
   "anonymize",
+  "blur",
   "settings",
   "docs",
 ];

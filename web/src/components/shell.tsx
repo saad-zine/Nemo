@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   LayoutSidebarInsetIcon,
   MarkAccount,
+  MarkBlur,
   MarkBoard,
   MarkIncognito,
   MarkKey,
@@ -22,6 +23,7 @@ import { FullAccessModal } from "@/components/full-access-modal";
 const NAV_ICONS: Record<NavKey, typeof MarkBoard> = {
   dashboard: MarkBoard,
   anonymize: MarkIncognito,
+  blur: MarkBlur,
   docs: MarkNotes,
   settings: MarkKey,
 };
