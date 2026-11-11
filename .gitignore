@@ -28,6 +28,7 @@ data/
 tests/__pycache__/
 *.log
 .hf-cache/
+.playwright-mcp/
 .omo/
 *.traineddata
 
