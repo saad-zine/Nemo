@@ -5,13 +5,10 @@ import {
   CircleUserRound,
   FileText,
   Gauge,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Paperclip,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
-  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -96,14 +93,6 @@ export function MarkSearch({ className }: Props) {
   return <Search className={className} {...iconProps} aria-hidden />;
 }
 
-export function MarkSidebarClose({ className }: Props) {
-  return <PanelLeftClose className={className} {...iconProps} aria-hidden />;
-}
-
-export function MarkSidebarOpen({ className }: Props) {
-  return <PanelLeftOpen className={className} {...iconProps} aria-hidden />;
-}
-
 export function LayoutSidebarInsetIcon({ className }: Props) {
   return (
     <svg
@@ -123,14 +112,6 @@ export function MarkUpload({ className }: Props) {
   return <Upload className={className} {...iconProps} aria-hidden />;
 }
 
-export function MarkPaperclip({ className }: Props) {
-  return <Paperclip className={className} {...iconProps} aria-hidden />;
-}
-
-export function MarkShield({ className }: Props) {
-  return <ShieldCheck className={className} {...iconProps} aria-hidden />;
-}
-
 export function MarkFileText({ className }: Props) {
   return <FileText className={className} {...iconProps} aria-hidden />;
 }
@@ -141,4 +122,8 @@ export function MarkX({ className }: Props) {
 
 export function MarkCopy({ className }: Props) {
   return <Copy className={className} {...iconProps} aria-hidden />;
+}
+
+export function MarkResend({ className }: Props) {
+  return <RotateCcw className={className} {...iconProps} aria-hidden />;
 }

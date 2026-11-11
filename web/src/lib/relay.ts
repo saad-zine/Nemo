@@ -1,72 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { isParseFailure, readableError, upstreamError } from "@/lib/relay-errors";
+import { ENDPOINTS, MODEL_ENDPOINTS, modelsSchema, schema } from "@/lib/relay-provider";
+import { extractText, sseTextStream } from "@/lib/relay-stream";
 
-const provider = z.enum(["openai", "anthropic", "gemini", "groq", "xai", "compatible"]);
-
-const schema = z.object({
-  provider,
-  apiKey: z.string().min(8).max(400),
-  model: z.string().min(1).max(120),
-  baseUrl: z.string().url().max(200),
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string().max(60000),
-      }),
-    )
-    .min(1)
-    .max(30),
-});
-
-const modelsSchema = z.object({
-  provider,
-  apiKey: z.string().min(8).max(400),
-  baseUrl: z.string().url().max(200),
-});
-
-const ENDPOINTS: Partial<Record<z.infer<typeof provider>, string>> = {
-  openai: "https://api.openai.com/v1",
-  gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
-  groq: "https://api.groq.com/openai/v1",
-  xai: "https://api.x.ai/v1",
-};
-
-const MODEL_ENDPOINTS: Partial<Record<z.infer<typeof provider>, string>> = {
-  openai: "https://api.openai.com/v1",
-  gemini: "https://generativelanguage.googleapis.com/v1beta",
-  groq: "https://api.groq.com/openai/v1",
-  xai: "https://api.x.ai/v1",
-};
-
-function upstreamError(json: unknown): string | undefined {
-  const body = (Array.isArray(json) ? json[0] : json) as { error?: unknown } | undefined;
-  const error = body?.error;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return undefined;
-}
-
-const PARSE_FAILURE = /parsing failed|could not be parsed|output_parse_failed/i;
-
-function isParseFailure(message: string, json: unknown) {
-  const code = (json as { error?: { code?: unknown } } | undefined)?.error?.code;
-  return code === "output_parse_failed" || PARSE_FAILURE.test(message);
-}
-
-function readableError(message: string) {
-  if (/request too large|tokens per minute|\btpm\b/i.test(message)) {
-    return "This request is larger than the provider's rate limit. Start a new chat, remove large attachments, or switch model.";
-  }
-  if (!PARSE_FAILURE.test(message)) return message;
-  return (
-    "The provider could not parse the model's own output (a known Harmony quirk with gpt-oss on Groq). " +
-    "Retried automatically. If it persists, try again or switch model — for example llama-3.3-70b-versatile."
-  );
-}
+const PLAIN_TEXT: ResponseInit = { headers: { "content-type": "text/plain; charset=utf-8" } };
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -114,45 +51,14 @@ export const relayChat = createServerFn({ method: "POST" })
           );
         }
 
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream({
-          async start(streamController) {
-            const reader = res.body!.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            try {
-              while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split("\n");
-                buffer = lines.pop() ?? "";
-                for (const line of lines) {
-                  const trimmed = line.trim();
-                  if (!trimmed.startsWith("data:")) continue;
-                  const payload = trimmed.slice(5).trim();
-                  try {
-                    const obj = JSON.parse(payload) as {
-                      type?: string;
-                      delta?: { text?: string };
-                    };
-                    if (obj.type === "content_block_delta" && obj.delta?.text) {
-                      streamController.enqueue(encoder.encode(obj.delta.text));
-                    }
-                  } catch {
-                    // Ignore non-JSON/control lines
-                  }
-                }
-              }
-            } finally {
-              reader.releaseLock();
-              streamController.close();
-            }
-          },
-        });
-        return raw(stream, {
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        });
+        // Some gateways ignore `stream: true` and answer with one JSON body.
+        const upstreamType = res.headers.get("content-type") || "";
+        if (upstreamType.includes("application/json")) {
+          const json = await res.json().catch(() => null);
+          return raw(extractText(json), PLAIN_TEXT);
+        }
+
+        return raw(sseTextStream(res), PLAIN_TEXT);
       }
 
       const root = ENDPOINTS[data.provider] ?? data.baseUrl.replace(/\/$/, "");
@@ -205,45 +111,14 @@ export const relayChat = createServerFn({ method: "POST" })
         return raw(JSON.stringify({ ok: false, error: readableError(lastError) }), { status: 502 });
       }
 
-      const upstream = res;
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        async start(streamController) {
-          const reader = upstream.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          try {
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith("data:")) continue;
-                const payload = trimmed.slice(5).trim();
-                if (payload === "[DONE]") continue;
-                try {
-                  const obj = JSON.parse(payload) as {
-                    choices?: { delta?: { content?: string } }[];
-                  };
-                  const content = obj.choices?.[0]?.delta?.content;
-                  if (content) streamController.enqueue(encoder.encode(content));
-                } catch {
-                  // Ignore malformed SSE lines.
-                }
-              }
-            }
-          } finally {
-            reader.releaseLock();
-            streamController.close();
-          }
-        },
-      });
-      return raw(stream, {
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      });
+      // Some gateways ignore `stream: true` and answer with one JSON body.
+      const upstreamType = res.headers.get("content-type") || "";
+      if (upstreamType.includes("application/json")) {
+        const json = await res.json().catch(() => null);
+        return raw(extractText(json), PLAIN_TEXT);
+      }
+
+      return raw(sseTextStream(res), PLAIN_TEXT);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Relay failed";
       return raw(JSON.stringify({ ok: false, error: readableError(message) }), { status: 500 });

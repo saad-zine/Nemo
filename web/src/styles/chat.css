@@ -1,0 +1,64 @@
+/* Thinking dots, from the Kobra Conversation demo */
+.t-msg-dots {
+  --msg-dot-cycle: 0.55s;
+  --msg-dot-stagger: 0.1s;
+  --msg-dot-lift: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 1lh;
+}
+
+.t-msg-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.45;
+  animation: msg-dot-bounce calc(var(--msg-dot-cycle) * 2) ease-in-out infinite;
+  animation-delay: calc(var(--msg-dot-stagger) * var(--msg-dot-index, 0));
+}
+
+@keyframes msg-dot-bounce {
+  0%, 90%, 100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(calc(var(--msg-dot-lift) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-msg-dot {
+    opacity: 0.6;
+    animation: none;
+  }
+}
+
+/* Streaming caret at the end of the reply that is still arriving. */
+.t-stream > *:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 0.95em;
+  margin-left: 0.15em;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: currentcolor;
+  animation: stream-caret-blink 1.05s steps(2, start) infinite;
+}
+
+@keyframes stream-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stream > *:last-child::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}

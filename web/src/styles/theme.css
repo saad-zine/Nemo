@@ -1,0 +1,61 @@
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-stencil: "Saira Stencil One", ui-sans-serif, system-ui, sans-serif;
+  --color-bg: #090909;
+  --color-surface: #0e0e0e;
+  --color-raised: #1c1c1c;
+  --color-line: #262626;
+  --color-fg: #f4f4f4;
+  --color-muted: #8d8d8d;
+  --color-muted-foreground: #8d8d8d;
+  --color-faint: #5a5a5a;
+  --color-brass: #f4f4f4;
+  --color-lime: #c8ff00;
+  --color-secondary: #c8ff00;
+  --color-send: #101910;
+  --color-ink: #101910;
+  --color-danger: #e06a5c;
+  --color-ok: #9a9a9a;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  /* Whole-app scale. Viewport-height layouts divide by it (see .h-app) so they still fit. */
+  :root {
+    --ui-zoom: 1;
+  }
+
+  html {
+    zoom: var(--ui-zoom);
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: #2c2c2c;
+    color: var(--color-fg);
+  }
+
+  textarea,
+  input {
+    caret-color: var(--color-lime);
+  }
+}
