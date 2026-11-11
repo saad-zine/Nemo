@@ -60,6 +60,16 @@ const STAGE_LABEL: Record<string, OcrStage> = {
 let workerPromise: Promise<Worker> | null = null;
 let workerLang = "";
 let listener: ((progress: OcrProgress) => void) | null = null;
+// One worker handles one image at a time, so recognition runs through a
+// queue. Several files arriving together (a multi-file drop, a burst of
+// pastes) would otherwise overwrite each other's image data.
+let queue: Promise<unknown> = Promise.resolve();
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task);
+  queue = run.catch(() => undefined);
+  return run;
+}
 
 function mapTesseractProgress(status: string, progress: number): OcrProgress {
   return { stage: STAGE_LABEL[status] ?? "recognizing", progress };
@@ -100,13 +110,15 @@ async function recognize(
   image: File | HTMLCanvasElement,
   onProgress?: (p: OcrProgress) => void,
 ) {
-  listener = onProgress ?? null;
-  try {
-    const result = await worker.recognize(image);
-    return result.data.text;
-  } finally {
-    listener = null;
-  }
+  return enqueue(async () => {
+    listener = onProgress ?? null;
+    try {
+      const result = await worker.recognize(image);
+      return result.data.text;
+    } finally {
+      listener = null;
+    }
+  });
 }
 
 async function imageText(file: File, worker: Worker, onProgress?: (p: OcrProgress) => void) {

@@ -1,12 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { AttachmentList } from "@/components/composer/attachment-list";
 import { AttachmentPicker } from "@/components/composer/attachment-picker";
 import { ModelPicker } from "@/components/composer/model-picker";
 import { PageDropOverlay } from "@/components/composer/page-drop-overlay";
-import { MarkFileText, MarkIncognito, MarkX } from "@/components/marks";
+import { pastedImages } from "@/components/composer/paste";
+import { MarkIncognito } from "@/components/marks";
 import { queueDraft } from "@/lib/draft";
-import { extractText, formatSize, readable } from "@/lib/files";
+import { extractText, readable } from "@/lib/files";
 import { ocrStageLabel } from "@/lib/ocr";
 import { eventMatchesShortcut, prettyShortcut } from "@/lib/shortcuts";
 import { useVault, type Attachment } from "@/lib/store";
@@ -31,6 +33,7 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
   const [ocrNote, setOcrNote] = useState("");
   const addFilesRef = useRef(addFiles);
   addFilesRef.current = addFiles;
+  const pasteIndexRef = useRef(1);
   const strict = useVault((s) => s.strict);
   const setStrict = useVault((s) => s.setStrict);
   const shortcut = useVault((s) => s.anonymizeShortcut);
@@ -95,11 +98,11 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
     };
   }, []);
 
-  async function addFiles(files: FileList | File[]) {
+  async function addFiles(files: FileList | File[], initialError = "") {
     const list = Array.from(files);
     if (list.length === 0) return;
     const next: Attachment[] = [];
-    let error = "";
+    let error = initialError;
     setOcrNote("");
     for (const file of list) {
       const problem = readable(file);
@@ -168,31 +171,29 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
 
         <div className="rounded-xl border border-line bg-raised shadow-sm transition-all outline-none focus-within:outline-none ring-0">
           <div className="px-3 pt-3 pb-2">
-            {attachments.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {attachments.map((file) => (
-                  <span key={file.id} className="flex max-w-full items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-[11px]">
-                    <MarkFileText className="size-3.5 shrink-0 text-muted" />
-                    <span className="max-w-44 truncate text-fg">{file.name}</span>
-                    <span className="shrink-0 text-faint">{formatSize(file.size)}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => setAttachments((prev) => prev.filter((f) => f.id !== file.id))}
-                      className="rounded p-0.5 text-faint hover:bg-raised hover:text-fg"
-                    >
-                      <MarkX className="size-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+            <AttachmentList
+              attachments={attachments}
+              onRemove={(id) => setAttachments((prev) => prev.filter((f) => f.id !== id))}
+            />
             {ocrNote && <p role="status" className="mb-2 text-[11px] text-muted">{ocrNote}…</p>}
             {fileError && <p role="alert" className="mb-2 text-[11px] text-danger">{fileError}</p>}
             <textarea
               value={value}
               rows={2}
               onChange={(e) => setValue(e.target.value)}
+              onPaste={(e) => {
+                const pasted = pastedImages(
+                  e.clipboardData,
+                  attachments.map((f) => f.name),
+                  pasteIndexRef.current,
+                );
+                if (pasted.files.length === 0 && !pasted.error) return;
+                pasteIndexRef.current = pasted.nextIndex;
+                // A screenshot on the clipboard can still carry a text flavour.
+                // Keep the prompt clean unless the paste really had text.
+                if (!e.clipboardData.getData("text/plain").trim()) e.preventDefault();
+                void addFiles(pasted.files, pasted.error);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();

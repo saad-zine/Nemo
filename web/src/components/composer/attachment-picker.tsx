@@ -84,6 +84,7 @@ export function AttachmentPicker({
             </button>
             <p className="px-2 pt-2 text-[11px] leading-relaxed text-faint">
               Images and scanned PDFs are read with local OCR. Files never leave this device.
+              You can also paste an image straight into the prompt.
             </p>
           </motion.div>
         )}
