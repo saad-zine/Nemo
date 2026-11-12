@@ -86,8 +86,6 @@ type State = {
   activity: Activity[];
   ledger: Hit[];
   fullAccessModalOpen: boolean;
-  sampleData: boolean;
-  setSampleData: (v: boolean) => void;
   setFullAccessModalOpen: (open: boolean) => void;
   saveKey: (settings: KeySettings) => void;
   saveProviderKey: (provider: Provider, config: ProviderConfig) => void;
@@ -153,8 +151,6 @@ export const useVault = create<State>()(
       activity: [],
       ledger: [],
       fullAccessModalOpen: false,
-      sampleData: true,
-      setSampleData: (sampleData) => set({ sampleData }),
       setFullAccessModalOpen: (fullAccessModalOpen) => set({ fullAccessModalOpen }),
       saveKey: (settings) => {
         const config = { apiKey: settings.apiKey.trim(), model: settings.model, baseUrl: settings.baseUrl };

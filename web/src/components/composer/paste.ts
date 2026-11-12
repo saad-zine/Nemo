@@ -38,7 +38,7 @@ function filesOnClipboard(transfer: DataTransfer) {
   return items;
 }
 
-export type PastedImages = {
+type PastedImages = {
   /** Images that can be attached, already renamed. */
   files: File[];
   /** Why an image was refused, when one was. */

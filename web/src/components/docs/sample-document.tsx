@@ -10,16 +10,7 @@ export function PatientDocument({ revealed }: { revealed: boolean }) {
           <p className="text-[8px] font-black tracking-[0.18em] uppercase">Community care / 084</p>
           <h4 className="mt-0.5 text-[22px] font-bold tracking-[-0.045em]">Patient note</h4>
         </div>
-        <svg aria-hidden="true" viewBox="0 0 48 48" className="size-10 -rotate-6">
-          <path
-            d="M24 40S7 30 7 18c0-9 12-11 17-3 5-8 17-6 17 3 0 12-17 22-17 22Z"
-            fill="#ff9b7b"
-            stroke="#273026"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-          />
-          <path d="M24 19v10M19 24h10" stroke="#273026" strokeWidth="2.4" strokeLinecap="round" />
-        </svg>
+        <PatientPortrait revealed={revealed} />
       </div>
 
       <div className="mt-4 space-y-3">
@@ -65,7 +56,50 @@ export function PatientDocument({ revealed }: { revealed: boolean }) {
   );
 }
 
-export function DocumentField({
+function PatientPortrait({ revealed }: { revealed: boolean }) {
+  return (
+    <div className="relative h-[58px] w-[52px] shrink-0 -rotate-2 overflow-hidden rounded-[5px] border-2 border-[#273026] bg-[#91dce8]">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 64 72"
+        className={`h-full w-full ${revealed ? "" : "blur-[3px] grayscale"}`}
+      >
+        <rect width="64" height="72" fill="#91dce8" />
+        <circle cx="51" cy="13" r="11" fill="#f5ffe0" opacity="0.65" />
+        <path
+          d="M6 72c1-18 12-26 26-26s25 8 26 26"
+          fill="#ff9b7b"
+          stroke="#273026"
+          strokeWidth="2"
+        />
+        <path d="M26 40h12v13H26z" fill="#bd805f" stroke="#273026" strokeWidth="1.8" />
+        <ellipse
+          cx="32"
+          cy="28"
+          rx="15"
+          ry="19"
+          fill="#d99b74"
+          stroke="#273026"
+          strokeWidth="2"
+        />
+        <path
+          d="M17 28C14 8 25 4 34 5c13 0 18 10 14 25l-5-12c-8 3-15 0-20-3Z"
+          fill="#273026"
+        />
+        <path d="M25 29h3m8 0h3" stroke="#273026" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M29 37c2 2 5 2 7 0" fill="none" stroke="#273026" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M20 58h24" stroke="#273026" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      {!revealed && (
+        <span className="absolute inset-x-1 bottom-1 rounded-sm bg-[#fffdf4]/90 px-1 py-0.5 text-center font-mono text-[6px] font-bold text-[#273026]">
+          FACE_1
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DocumentField({
   label,
   token,
   original,

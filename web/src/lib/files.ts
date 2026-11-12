@@ -3,7 +3,7 @@
 
 import { OCR_EXTENSIONS, isOcrFile, ocrFile, type OcrProgress } from "@/lib/ocr";
 
-export const TEXT_EXTENSIONS = [
+const TEXT_EXTENSIONS = [
   "txt",
   "md",
   "csv",
@@ -19,15 +19,15 @@ export const TEXT_EXTENSIONS = [
   "rtf",
 ];
 
-export const BINARY_EXTENSIONS = ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip"];
+const BINARY_EXTENSIONS = ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip"];
 
 const EXTENSIONS = [...TEXT_EXTENSIONS, ...OCR_EXTENSIONS];
 
 export const ACCEPT =
   EXTENSIONS.map((e) => "." + e).join(",") +
   ",text/*,application/json,image/*,application/pdf";
-export const MAX_BYTES = 2 * 1024 * 1024;
-export const MAX_OCR_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 2 * 1024 * 1024;
+const MAX_OCR_BYTES = 10 * 1024 * 1024;
 
 export function readable(file: File): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -57,7 +57,7 @@ export function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function readTextFile(file: File): Promise<string> {
+function readTextFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));

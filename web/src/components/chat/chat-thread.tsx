@@ -6,6 +6,7 @@ import {
   ConversationContent,
 } from "@/components/ui/conversation";
 import { MarkCopy, MarkFileText, MarkResend } from "@/components/marks";
+import { CollapsibleText } from "@/components/chat/collapsible-text";
 import { renderAiContent, renderInlineMarkdown } from "@/lib/ai";
 import { formatSize } from "@/lib/files";
 import type { Hit } from "@/lib/anonymize";
@@ -50,9 +51,11 @@ export function ChatThread({
           <ConversationBubble key={m.id} id={m.id} align="end" variant="default" sentAt={time(m.at)}>
             <ConversationContent render={<motion.div {...enter(!isFresh(m.id))} />}>
               {(m.content || m.masked) && (
-                <p className="whitespace-pre-wrap">
-                  {renderInlineMarkdown(reveal ? m.content : m.masked || m.content)}
-                </p>
+                <CollapsibleText>
+                  <p className="whitespace-pre-wrap">
+                    {renderInlineMarkdown(reveal ? m.content : m.masked || m.content)}
+                  </p>
+                </CollapsibleText>
               )}
               {m.attachments?.map((file, index) => (
                 <div

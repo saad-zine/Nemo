@@ -1,6 +1,6 @@
 import { restore, type Hit } from "@/lib/anonymize";
 
-export type StreamPatch = { content: string; masked: string };
+type StreamPatch = { content: string; masked: string };
 
 type PumpOptions = {
   response: Response;

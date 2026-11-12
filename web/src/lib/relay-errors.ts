@@ -1,4 +1,4 @@
-export const PARSE_FAILURE = /parsing failed|could not be parsed|output_parse_failed/i;
+const PARSE_FAILURE = /parsing failed|could not be parsed|output_parse_failed/i;
 
 export function upstreamError(json: unknown): string | undefined {
   const body = (Array.isArray(json) ? json[0] : json) as { error?: unknown } | undefined;

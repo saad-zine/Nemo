@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "./styles/theme.css";
 @import "./styles/shell.css";
-@import "./styles/sound.css";
 @import "./styles/chat.css";
 @import "./styles/docs-flow.css";

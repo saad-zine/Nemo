@@ -1,4 +1,4 @@
-export type ShortcutParts = {
+type ShortcutParts = {
   ctrl: boolean;
   meta: boolean;
   alt: boolean;
@@ -8,7 +8,7 @@ export type ShortcutParts = {
 
 const MODIFIER_KEYS = new Set(["control", "meta", "alt", "shift"]);
 
-export function parseShortcut(shortcut: string): ShortcutParts {
+function parseShortcut(shortcut: string): ShortcutParts {
   const parts = shortcut
     .split("+")
     .map((part) => part.trim())

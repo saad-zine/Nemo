@@ -5,6 +5,7 @@ import {
   CircleUserRound,
   FileText,
   Gauge,
+  House,
   Pencil,
   Plus,
   RotateCcw,
@@ -46,6 +47,10 @@ export function MarkPlus({ className }: Props) {
 
 export function MarkBoard({ className }: Props) {
   return <Gauge className={className} {...iconProps} aria-hidden />;
+}
+
+export function MarkHome({ className }: Props) {
+  return <House className={className} {...iconProps} aria-hidden />;
 }
 
 export function MarkIncognito({ className }: Props) {

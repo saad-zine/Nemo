@@ -12,7 +12,7 @@ const KRYPTOS_ART = [
   "╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝    ╚═════╝ ╚══════╝",
 ];
 
-export function KryptosEmpty({ incognito }: { incognito: boolean }) {
+export function KryptosEmpty({ incognito, compact = false }: { incognito: boolean; compact?: boolean }) {
   const reduce = useReducedMotion();
   const [visible, setVisible] = useState(false);
 
@@ -24,7 +24,7 @@ export function KryptosEmpty({ incognito }: { incognito: boolean }) {
   }, []);
 
   return (
-    <div className="flex h-full flex-col items-center justify-center pb-16">
+    <div className={`flex flex-col items-center justify-center ${compact ? "" : "h-full pb-16"}`}>
       {incognito && (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-raised px-2.5 py-1 text-[11px] text-muted">
           <MarkIncognito className="size-3.5" /> Incognito
@@ -58,9 +58,6 @@ export function KryptosEmpty({ incognito }: { incognito: boolean }) {
               },
             }}
             className="krypto-sheen mx-0 my-[-3px] py-[3px] whitespace-pre font-mono leading-[1.05] text-[7px] sm:text-[10px] md:text-[13px]"
-            style={{
-              fontFamily: '"JetBrains Mono","Fira Code",ui-monospace,Menlo,Consolas,monospace',
-            }}
           >
             {line}
           </motion.pre>
@@ -84,7 +81,9 @@ export function KryptosEmpty({ incognito }: { incognito: boolean }) {
       >
         {incognito
           ? "This conversation stays in this tab and is never saved."
-          : "Ask a question, paste a note, or point at a file. Sensitive spans are stripped before anything reaches your model."}
+          : compact
+            ? "Choose a tool. Your private details stay on your device."
+            : "Ask a question, paste a note, or point at a file. Sensitive spans are stripped before anything reaches your model."}
       </motion.p>
     </div>
   );

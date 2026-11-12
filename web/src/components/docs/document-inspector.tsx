@@ -1,4 +1,3 @@
-import { MousePointer2, ScanSearch } from "lucide-react";
 import {
   motion,
   useMotionTemplate,
@@ -14,8 +13,8 @@ import {
 } from "react";
 import { PatientDocument } from "./sample-document";
 
-export const LENS_SIZE = 116;
-export const LENS_RADIUS = LENS_SIZE / 2;
+const LENS_SIZE = 116;
+const LENS_RADIUS = LENS_SIZE / 2;
 
 export function DocumentInspector() {
   const paperRef = useRef<HTMLDivElement>(null);
@@ -92,95 +91,59 @@ export function DocumentInspector() {
   }
 
   return (
-    <div className="mt-4 mb-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <p id="lens-hint" className="flex items-center gap-1.5 text-[10px] text-muted">
-          <MousePointer2 className="size-3 shrink-0 text-lime" />
-          Hover or tap the note
-        </p>
-        <button
-          type="button"
-          aria-pressed={active}
-          aria-controls="sample-document"
-          onClick={() => (active ? setActive(false) : showLens())}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-raised/70 px-2.5 py-1 text-[10px] font-bold text-fg transition-colors hover:border-lime/50 hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
-        >
-          <ScanSearch className="size-3" />
-          {active ? "Hide lens" : "Inspect"}
-        </button>
-      </div>
-
-      <div className="relative px-1 pt-2 pb-3">
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-4 inset-y-3 rotate-[2.5deg] rounded-[5px] border-2 border-[#252b23] bg-[#ff9b7b]"
-        />
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-3 inset-y-4 -rotate-[1.5deg] rounded-[5px] border-2 border-[#252b23] bg-[#91dce8]"
-        />
-        <div
-          id="sample-document"
-          ref={paperRef}
-          role="button"
-          tabIndex={0}
-          aria-pressed={active}
-          aria-describedby="lens-hint"
-          aria-label="Anonymized sample patient note. Activate the magnifying lens, then use arrow keys to move it."
-          onKeyDown={onKeyDown}
-          onPointerEnter={onPointerEnter}
-          onPointerMove={onPointerMove}
-          onPointerDown={onPointerDown}
-          onPointerLeave={(event) => {
-            if (event.pointerType === "mouse") setActive(false);
-          }}
-          className={`relative h-[370px] rounded-[5px] border-2 border-[#252b23] bg-[#fffdf4] text-[#273026] shadow-[4px_5px_0_#252b23] outline-none select-none focus-visible:ring-3 focus-visible:ring-lime focus-visible:ring-offset-3 focus-visible:ring-offset-bg ${
-            active ? "cursor-none" : "cursor-crosshair"
-          }`}
-          style={{ touchAction: "pan-y" }}
-        >
-          <div
-            aria-hidden="true"
-            className="absolute -top-3 left-1/2 z-40 h-7 w-20 -translate-x-1/2 -rotate-2 border-x border-[#d4c794] bg-[#f4e7ae]/90 shadow-sm"
-          />
-          <div aria-hidden="true" className="absolute inset-0">
-            <PatientDocument revealed={false} />
-          </div>
-
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-20"
-            style={{ clipPath }}
-            animate={{ opacity: active ? 1 : 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.12 }}
-          >
-            <motion.div
-              className="absolute inset-0"
-              style={{ scale: 1.08, transformOrigin }}
-            >
-              <PatientDocument revealed />
-            </motion.div>
-          </motion.div>
-
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-0 left-0 z-30 size-[116px]"
-            style={{ x: lensX, y: lensY, marginLeft: -LENS_RADIUS, marginTop: -LENS_RADIUS }}
-            animate={{ opacity: active ? 1 : 0, scale: active ? 1 : 0.82 }}
-            transition={{ duration: reduceMotion ? 0 : 0.16 }}
-          >
-            <div className="absolute top-[84px] left-[86px] h-[52px] w-[15px] origin-top -rotate-45 rounded-full border-[3px] border-[#252b23] bg-[#ff8f70] shadow-[2px_2px_0_#252b23]" />
-            <div className="relative size-[116px] rounded-full border-[5px] border-[#252b23] bg-white/5 shadow-[4px_5px_0_rgba(37,43,35,0.9),inset_0_0_0_2px_rgba(255,255,255,0.75)]">
-              <div className="absolute top-[12px] left-[22px] h-[9px] w-[29px] -rotate-[28deg] rounded-full bg-white/75" />
-              <div className="absolute right-[16px] bottom-[18px] size-2 rounded-full bg-white/45" />
-            </div>
-          </motion.div>
+    <div>
+      <div
+        ref={paperRef}
+        role="button"
+        tabIndex={0}
+        aria-pressed={active}
+        aria-label="Anonymized sample patient note. Hover, tap, or press Enter to use the magnifying glass; arrow keys move it."
+        onKeyDown={onKeyDown}
+        onPointerEnter={onPointerEnter}
+        onPointerMove={onPointerMove}
+        onPointerDown={onPointerDown}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setActive(false);
+        }}
+        className={`relative h-[370px] rounded-[5px] border-2 border-[#252b23] bg-[#fffdf4] text-[#273026] shadow-[4px_5px_0_#252b23] outline-none select-none focus-visible:ring-3 focus-visible:ring-lime focus-visible:ring-offset-3 focus-visible:ring-offset-bg ${
+          active ? "cursor-none" : "cursor-crosshair"
+        }`}
+        style={{ touchAction: "pan-y" }}
+      >
+        <div aria-hidden="true" className="absolute inset-0">
+          <PatientDocument revealed={false} />
         </div>
+
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-20"
+          style={{ clipPath }}
+          animate={{ opacity: active ? 1 : 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.12 }}
+        >
+          <motion.div className="absolute inset-0" style={{ scale: 1.08, transformOrigin }}>
+            <PatientDocument revealed />
+          </motion.div>
+        </motion.div>
+
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 left-0 z-30 size-[116px]"
+          style={{ x: lensX, y: lensY, marginLeft: -LENS_RADIUS, marginTop: -LENS_RADIUS }}
+          animate={{ opacity: active ? 1 : 0, scale: active ? 1 : 0.82 }}
+          transition={{ duration: reduceMotion ? 0 : 0.16 }}
+        >
+          <div className="absolute top-[84px] left-[86px] h-[52px] w-[15px] origin-top -rotate-45 rounded-full border-[3px] border-[#252b23] bg-[#ff8f70] shadow-[2px_2px_0_#252b23]" />
+          <div className="relative size-[116px] rounded-full border-[5px] border-[#252b23] bg-white/5 shadow-[4px_5px_0_rgba(37,43,35,0.9),inset_0_0_0_2px_rgba(255,255,255,0.75)]">
+            <div className="absolute top-[12px] left-[22px] h-[9px] w-[29px] -rotate-[28deg] rounded-full bg-white/75" />
+            <div className="absolute right-[16px] bottom-[18px] size-2 rounded-full bg-white/45" />
+          </div>
+        </motion.div>
       </div>
       <p aria-live="polite" className="sr-only">
         {active
-          ? "Lens open. The private values are Yasmine Benali, 14 Rue des Orangers, Casablanca, and Attijariwafa Bank."
-          : "Lens closed. The document shows anonymized tokens."}
+          ? "Lens open. The private values and portrait are visible: Yasmine Benali, 14 Rue des Orangers, Casablanca, and Attijariwafa Bank."
+          : "Lens closed. The document shows anonymized tokens and a blurred portrait."}
       </p>
     </div>
   );

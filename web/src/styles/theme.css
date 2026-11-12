@@ -2,8 +2,6 @@
 
 @theme {
   --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-stencil: "Saira Stencil One", ui-sans-serif, system-ui, sans-serif;
   --color-bg: #090909;
   --color-surface: #0e0e0e;
   --color-raised: #1c1c1c;
@@ -12,13 +10,57 @@
   --color-muted: #8d8d8d;
   --color-muted-foreground: #8d8d8d;
   --color-faint: #5a5a5a;
-  --color-brass: #f4f4f4;
   --color-lime: #c8ff00;
-  --color-secondary: #c8ff00;
-  --color-send: #101910;
   --color-ink: #101910;
   --color-danger: #e06a5c;
-  --color-ok: #9a9a9a;
+}
+
+/* Chat bubbles follow the theme. */
+:root {
+  --bubble-sent: #2b2b2b;
+  --bubble-sent-foreground: #f4f4f4;
+  --bubble-sent-hover: #363636;
+  --bubble-received: #e9e9eb;
+  --bubble-received-foreground: #000000;
+}
+
+.dark {
+  color-scheme: dark;
+  --bubble-received: #3b3b3d;
+  --bubble-received-foreground: #ffffff;
+}
+
+.light {
+  color-scheme: light;
+  --color-bg: #f4f4f1;
+  --color-surface: #fbfbf9;
+  --color-raised: #ecece7;
+  --color-line: #deded8;
+  --color-fg: #171714;
+  --color-muted: #6a6a62;
+  --color-muted-foreground: #6a6a62;
+  --color-faint: #9c9c93;
+  --color-lime: #171714;
+  --color-ink: #ffffff;
+  --color-danger: #b3402f;
+  --bubble-sent: #e4e4dd;
+  --bubble-sent-foreground: #171714;
+  --bubble-sent-hover: #dadad2;
+  --bubble-received: #efefe9;
+  --bubble-received-foreground: #171714;
+}
+
+.light ::selection {
+  background: #dcded4;
+  color: #171714;
+}
+
+@theme inline {
+  --color-bubble-sent: var(--bubble-sent);
+  --color-bubble-sent-foreground: var(--bubble-sent-foreground);
+  --color-bubble-sent-hover: var(--bubble-sent-hover);
+  --color-bubble-received: var(--bubble-received);
+  --color-bubble-received-foreground: var(--bubble-received-foreground);
 }
 
 @layer base {

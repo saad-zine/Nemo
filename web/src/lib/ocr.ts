@@ -3,7 +3,7 @@
 
 import type { Worker } from "tesseract.js";
 
-export const OCR_IMAGE_EXTENSIONS = [
+const OCR_IMAGE_EXTENSIONS = [
   "png",
   "jpg",
   "jpeg",
@@ -41,7 +41,7 @@ export function isImageFile(file: File) {
   );
 }
 
-export function isPdfFile(file: File) {
+function isPdfFile(file: File) {
   return extension(file) === "pdf" || file.type === "application/pdf";
 }
 
@@ -95,14 +95,6 @@ async function getWorker(lang: string) {
     });
   }
   return workerPromise;
-}
-
-export async function terminateOcr() {
-  if (!workerPromise) return;
-  const active = workerPromise;
-  workerPromise = null;
-  workerLang = "";
-  await active.then((worker) => worker.terminate()).catch(() => undefined);
 }
 
 async function recognize(

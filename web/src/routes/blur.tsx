@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { MarkBlur, MarkUpload, MarkX } from "@/components/marks";
+import { pastedImages } from "@/components/composer/paste";
 import {
   canvasToBlob,
   detectFaces,
@@ -117,6 +118,19 @@ function ImageBlur() {
     setNote("");
   }
 
+  function onPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const pasted = pastedImages(event.clipboardData);
+    if (pasted.files.length === 0 && !pasted.error) return;
+    event.preventDefault();
+    if (pasted.error) {
+      setError(pasted.error);
+      setNote("");
+      return;
+    }
+    const next = pasted.files[0];
+    if (next) void onFile(next);
+  }
+
   function removeRegion(id: string) {
     setRegions((prev) => prev.filter((region) => region.id !== id));
   }
@@ -187,7 +201,7 @@ function ImageBlur() {
   const size = image ? `${image.naturalWidth} × ${image.naturalHeight}` : "";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" onPaste={onPaste}>
       <div className="flex flex-wrap items-end justify-between gap-3 px-6 py-4 md:px-10">
         <div>
           <div className="text-[11px] text-faint">Face blur</div>
@@ -285,7 +299,7 @@ function ImageBlur() {
               <MarkBlur className="size-7 text-muted" />
               <p className="mt-4 text-sm text-fg">Drop a CV or document photo</p>
               <p className="mt-1 text-[12px] text-faint">
-                PNG, JPG or WebP up to 10 MB · Face detection runs on this device
+                PNG, JPG or WebP up to 10 MB · Ctrl+V to paste · Face detection runs on this device
               </p>
               <button
                 type="button"

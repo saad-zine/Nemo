@@ -11,17 +11,16 @@ license = {file = "LICENSE"}
 authors = [{name = "Seddzz"}]
 requires-python = ">=3.11"
 dependencies = [
-    "pymupdf",
     "transformers>=5.19",
     "torch",
     "faker",
+    "numpy",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff",
     "pytest",
-    "hypothesis",
 ]
 
 [tool.setuptools.packages.find]

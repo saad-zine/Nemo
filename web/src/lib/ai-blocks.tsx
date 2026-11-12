@@ -17,19 +17,48 @@ const HEADING_RE = /^\s*(#{1,6})\s+(.+?)\s*#*\s*$/;
 // Horizontal rule.
 const RULE_RE = /^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
 
-// List item: bullet (- * +) or ordered (1.).
-const LIST_ITEM_RE = /^\s*(?:[-*+]\s+|\d+\.\s+)/;
+// Bullet markers. Models often emit a literal "•" instead of "-", which
+// would otherwise render as plain paragraph text.
+const BULLET_MARKER = "[-*+•‣◦▪∙·]";
+
+// List item: bullet (- * + •) or ordered (1.).
+const LIST_ITEM_RE = new RegExp(`^\\s*(?:${BULLET_MARKER}\\s+|\\d+\\.\\s+)`);
 // List item with indentation, marker and text captured separately.
-const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.)\s+(.*)$/;
+const LIST_LINE_RE = new RegExp(`^(\\s*)(${BULLET_MARKER}|\\d+\\.)\\s+(.*)$`);
 // Ordered list item marker.
 const ORDERED_LIST_RE = /^\s*\d+\.\s+/;
+// A paragraph that is nothing but a bold span reads as a section label.
+const BOLD_ONLY_RE = /^(?:\*\*|__)(.+)(?:\*\*|__)$/;
+// A short line with no sentence punctuation is a section title, e.g.
+// "PartII - Deep Models", when it introduces a list.
+const SECTION_TITLE_RE = /^.{1,60}$/;
+// A list item that leads with a short phrase before a dash: the phrase is
+// the item's title, e.g. "Model Components - Details the notion ...".
+const LEAD_IN_RE = /^([A-Z][^–—-]{1,60}?)\s+[-–—]\s+(.+)$/;
+// A line that opens a clause but does not close it continues the item above.
+const UNFINISHED_RE = /[(\-–—,:]$/;
 
 // Code fence opener and closer.
 const FENCE_OPEN_RE = /^```(\w*)\s*$/;
 const FENCE_CLOSE_RE = /^```\s*$/;
 
 function splitCells(row: string): string[] {
-  return row.replace(/^\s*\||\s*\|$/g, "").split("|").map((cell) => cell.trim());
+  return row.replace(/^\s*\|\s*$/g, "").split("|").map((cell) => cell.trim());
+}
+
+/**
+ * Whether a line continues the item above it. The model wrapped long items
+ * across lines, so a line that starts lowercase, or that follows an
+ * unfinished clause, belongs to the item it sits under.
+ */
+function continuesItem(itemText: string, line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (UNFINISHED_RE.test(itemText)) return true;
+  // A capitalised word usually starts a new sentence, but not when it is an
+  // acronym or a term the previous line opened a parenthesis for.
+  if (/^[A-Z]/.test(trimmed) && !/[A-Z]{2,}/.test(trimmed[0] + trimmed[1])) return false;
+  return true;
 }
 
 function parseTable(lines: string[]): string[][] {
@@ -41,6 +70,7 @@ type ListItem = { text: string; ordered: boolean; children: ListItem[] };
 type Block =
   | { kind: "fence"; code: string }
   | { kind: "heading"; level: number; text: string }
+  | { kind: "label"; text: string }
   | { kind: "rule" }
   | { kind: "table"; rows: string[][] }
   | { kind: "list"; items: ListItem[] }
@@ -67,6 +97,7 @@ function readList(lines: string[], start: number): [Block, number] {
     { depth: 0, ordered: rootOrdered, items: root },
   ];
   let i = start;
+  let lastItem: ListItem | null = null;
 
   while (i < lines.length) {
     const match = lines[i].match(LIST_LINE_RE);
@@ -78,18 +109,36 @@ function readList(lines: string[], start: number): [Block, number] {
         while (next < lines.length && lines[next].trim() === "") next++;
         const nextMatch = next < lines.length ? lines[next].match(LIST_LINE_RE) : null;
         if (nextMatch) {
-          const nextOrdered = !/^[-*+]/.test(nextMatch[2]);
+          const nextOrdered = !new RegExp(`^${BULLET_MARKER}`).test(nextMatch[2]);
           const nextDepth = Math.floor(nextMatch[1].replace(/\t/g, "  ").length / 2);
           if (nextDepth === 0 && nextOrdered === rootOrdered) {
             i = next;
+            lastItem = null;
             continue;
           }
         }
+        break;
+      }
+      // A line right under an item continues it: the model wrapped its own
+      // long bullet across lines. Fold it back into the item so the list
+      // does not break apart mid-sentence. A line that opens a new
+      // sentence or section is left alone.
+      if (
+        lastItem &&
+        continuesItem(lastItem.text, lines[i]) &&
+        !HEADING_RE.test(lines[i]) &&
+        !TABLE_ROW_RE.test(lines[i]) &&
+        !FENCE_OPEN_RE.test(lines[i]) &&
+        !RULE_RE.test(lines[i])
+      ) {
+        lastItem.text = `${lastItem.text} ${lines[i].trim()}`;
+        i++;
+        continue;
       }
       break;
     }
     const indent = match[1].replace(/\t/g, "  ").length;
-    const ordered = !/^[-*+]/.test(match[2]);
+    const ordered = !new RegExp(`^${BULLET_MARKER}`).test(match[2]);
     let depth = Math.floor(indent / 2);
 
     if (depth === 0 && ordered !== rootOrdered && root.length > 0) {
@@ -111,7 +160,9 @@ function readList(lines: string[], start: number): [Block, number] {
     }
 
     const level = levels[levels.length - 1];
-    level.items.push({ text: match[3], ordered, children: [] });
+    const item: ListItem = { text: match[3], ordered, children: [] };
+    level.items.push(item);
+    lastItem = item;
     i++;
   }
 
@@ -140,7 +191,26 @@ function readParagraph(lines: string[], start: number): [Block | null, number] {
     i++;
   }
   if (textLines.length === 0) return [null, i];
-  return [{ kind: "text", text: textLines.join("\n") }, i];
+  const joined = textLines.join("\n");
+  // A lone bold line is a section label, not a paragraph.
+  const label = joined.trim().match(BOLD_ONLY_RE);
+  if (label) return [{ kind: "label", text: label[1] }, i];
+  // A short standalone line that introduces a list is a section title,
+  // e.g. "PartII - Deep Models" before its numbered items.
+  if (textLines.length === 1) {
+    const candidate = textLines[0].trim();
+    let next = i;
+    while (next < lines.length && lines[next].trim() === "") next++;
+    if (
+      SECTION_TITLE_RE.test(candidate) &&
+      !/[.!?:;]$/.test(candidate) &&
+      next < lines.length &&
+      LIST_ITEM_RE.test(lines[next])
+    ) {
+      return [{ kind: "label", text: candidate }, i];
+    }
+  }
+  return [{ kind: "text", text: joined }, i];
 }
 
 function segmentBlocks(text: string): Block[] {
@@ -233,12 +303,15 @@ function renderListItems(items: ListItem[], nested = false): ReactNode {
   const ordered = items[0].ordered;
   const Tag = ordered ? "ol" : "ul";
   const marker = ordered ? "list-decimal" : "list-disc";
-  const spacing = nested ? "mt-1" : "mb-2";
   return (
-    <Tag className={`list-inside space-y-1 text-fg ${marker} ${spacing}`}>
+    <Tag
+      className={`mb-3 ml-5 space-y-1.5 text-fg marker:text-muted ${marker} ${
+        nested ? "mt-1.5" : ""
+      }`}
+    >
       {items.map((item, index) => (
-        <li key={index} className="whitespace-pre-wrap">
-          {renderInline(item.text)}
+        <li key={index} className="whitespace-pre-wrap pl-1 leading-relaxed">
+          {renderItemText(item.text)}
           {item.children.length > 0 ? renderListItems(item.children, true) : null}
         </li>
       ))}
@@ -246,15 +319,40 @@ function renderListItems(items: ListItem[], nested = false): ReactNode {
   );
 }
 
+/**
+ * Render a list item. An item that leads with a short phrase before a dash
+ * keeps the phrase bold, so "Model Components - Details ..." reads as a
+ * titled entry rather than one long run-on line.
+ */
+function renderItemText(text: string): ReactNode {
+  const lead = text.match(LEAD_IN_RE);
+  if (!lead) return renderInline(text);
+  return (
+    <>
+      <strong className="font-semibold text-fg">{lead[1]}</strong>
+      {" - "}
+      {renderInline(lead[2])}
+    </>
+  );
+}
+
 function renderHeading({ level, text }: { level: number; text: string }): ReactNode {
   const Tag = `h${Math.min(level, 4)}` as "h1" | "h2" | "h3" | "h4";
   let size = "text-sm font-semibold";
   if (level === 1) {
-    size = "text-lg font-semibold";
+    size = "text-lg font-semibold tracking-tight";
   } else if (level === 2) {
-    size = "text-base font-semibold";
+    size = "text-base font-semibold tracking-tight";
   }
-  return <Tag className={`${size} mb-2 mt-1 text-fg`}>{renderInline(text)}</Tag>;
+  return <Tag className={`${size} mb-2 mt-5 text-fg first:mt-0`}>{renderInline(text)}</Tag>;
+}
+
+function renderLabel({ text }: { text: string }): ReactNode {
+  return (
+    <p className="mb-1.5 mt-4 text-sm font-semibold text-fg first:mt-0">
+      {renderInline(`**${text}**`)}
+    </p>
+  );
 }
 
 function renderBlock(block: Block, index: number): ReactNode {
@@ -267,6 +365,8 @@ function renderBlock(block: Block, index: number): ReactNode {
           {renderHeading({ level: block.level, text: block.text })}
         </Fragment>
       );
+    case "label":
+      return <Fragment key={`label-${index}`}>{renderLabel({ text: block.text })}</Fragment>;
     case "rule":
       return <hr key={`rule-${index}`} className="my-3 border-line" />;
     case "table":
@@ -279,7 +379,7 @@ function renderBlock(block: Block, index: number): ReactNode {
       );
     case "text":
       return (
-        <p key={`text-${index}`} className="whitespace-pre-wrap mb-2">
+        <p key={`text-${index}`} className="mb-3 leading-relaxed">
           {renderInline(block.text)}
         </p>
       );

@@ -20,8 +20,16 @@ export const relayChat = createServerFn({ method: "POST" })
         headers: { ...(init?.headers ?? {}), "x-tss-raw": "true" },
       });
     try {
-      const systemPrompt =
-        "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.";
+      const systemPrompt = [
+        "The user routes messages through a local anonymization layer. Tokens like [[PERSON_1]] stand in for private values you must not guess. Answer using only what is written.",
+        "",
+        "Format your answer as clean Markdown so it reads well on screen:",
+        "- Use `##` headings for sections and `**bold**` for short labels.",
+        "- Use `-` bullets for lists and `1.` for numbered steps.",
+        "- Put each list item on a single line and leave a blank line between paragraphs.",
+        "- Never use hard line breaks to fake a list; write real Markdown.",
+        "- Keep paragraphs short and lead with the point.",
+      ].join("\n");
       const messages = [{ role: "system", content: systemPrompt }, ...data.messages];
 
       if (data.provider === "anthropic") {

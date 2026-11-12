@@ -6,6 +6,7 @@ import {
   MarkAccount,
   MarkBlur,
   MarkBoard,
+  MarkHome,
   MarkIncognito,
   MarkKey,
   MarkMoney,
@@ -192,6 +193,15 @@ export function Shell({ children }: { children: ReactNode }) {
                 </button>
               )}
             </div>
+            <Link
+              to="/"
+              className={`group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-bold transition-colors ${
+                path === "/" ? "text-fg" : "text-muted hover:bg-raised/60 hover:text-fg"
+              }`}
+            >
+              <MarkHome className={`nav-icon size-4 ${path === "/" ? "text-lime" : ""}`} />
+              Home
+            </Link>
             <button
               type="button"
               onClick={() => {
@@ -367,6 +377,16 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             </div>
             <div className="flex flex-col items-center gap-2">
+              <Link
+                to="/"
+                aria-label="Home"
+                title="Home"
+                className={`rounded-md p-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime ${
+                  path === "/" ? "text-lime" : "text-muted hover:text-lime"
+                }`}
+              >
+                <MarkHome className="nav-icon size-4" />
+              </Link>
               <button
                 type="button"
                 onClick={() => {
@@ -460,6 +480,14 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             New
           </button>
+          <Link
+            to="/"
+            className={`shrink-0 rounded-md px-2 py-1.5 text-sm font-bold ${
+              path === "/" ? "text-fg" : "text-muted"
+            }`}
+          >
+            Home
+          </Link>
           {nav.map((key) => (
             <Link
               key={key}

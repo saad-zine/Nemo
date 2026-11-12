@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AttachmentList } from "@/components/composer/attachment-list";
-import { AttachmentPicker } from "@/components/composer/attachment-picker";
+import { AttachmentPanel, AttachmentPicker } from "@/components/composer/attachment-picker";
 import { ModelPicker } from "@/components/composer/model-picker";
 import { PageDropOverlay } from "@/components/composer/page-drop-overlay";
 import { pastedImages } from "@/components/composer/paste";
@@ -100,7 +100,10 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
 
   async function addFiles(files: FileList | File[], initialError = "") {
     const list = Array.from(files);
-    if (list.length === 0) return;
+    if (list.length === 0) {
+      if (initialError) setFileError(initialError);
+      return;
+    }
     const next: Attachment[] = [];
     let error = initialError;
     setOcrNote("");
@@ -120,6 +123,7 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
     }
     if (next.length > 0) {
       setAttachments((prev) => [...prev, ...next].slice(0, 6));
+      // The file is attached now, so the drop panel has nothing left to do.
       setUploadOpen(false);
     }
     setFileError(error);
@@ -169,6 +173,21 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
           )}
         </AnimatePresence>
 
+        <AnimatePresence initial={false}>
+          {uploadOpen && (
+            <motion.div
+              key="attachment-panel"
+              initial={{ opacity: 0, y: 12, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: 12, height: 0 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <AttachmentPanel onFiles={(files) => void addFiles(files)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="rounded-xl border border-line bg-raised shadow-sm transition-all outline-none focus-within:outline-none ring-0">
           <div className="px-3 pt-3 pb-2">
             <AttachmentList
@@ -211,7 +230,6 @@ export function Composer({ onSend, busy, conversationAutoAnonymize }: {
                     setFileError("");
                     setUploadOpen((open) => !open);
                   }}
-                  onFiles={(files) => void addFiles(files)}
                 />
                 <button
                   type="button"
