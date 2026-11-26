@@ -1,7 +1,14 @@
 // Providers the relay can talk to, with the endpoint and model presets for each.
 // Every provider except Anthropic speaks the OpenAI chat-completions API.
 
-export type Provider = "openai" | "anthropic" | "gemini" | "groq" | "xai" | "compatible";
+export type Provider =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "groq"
+  | "xai"
+  | "freellmapi"
+  | "compatible";
 
 export type ProviderInfo = {
   id: Provider;
@@ -77,6 +84,15 @@ export const PROVIDERS: ProviderInfo[] = [
     baseUrl: "https://api.x.ai/v1",
     keyHint: "xai-…",
     models: ["grok-4", "grok-4-fast", "grok-3", "grok-3-mini"],
+  },
+  {
+    id: "freellmapi",
+    label: "FreeLLMAPI",
+    family: "Local Gateway aggregator",
+    note: "Local gateway at http://127.0.0.1:31415/v1",
+    baseUrl: "http://127.0.0.1:31415/v1",
+    keyHint: "API key or any token",
+    models: ["auto", "claude-3-5-sonnet", "gpt-4o", "gemini-1.5-pro"],
   },
   {
     id: "compatible",

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PROVIDERS, providerInfo } from "@/lib/models";
 import { relayModels } from "@/lib/relay";
 import { useVault } from "@/lib/store";
@@ -10,7 +10,9 @@ export function ModelPicker() {
   const [models, setModels] = useState<string[]>([]);
   const [modelState, setModelState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [modelError, setModelError] = useState("");
+  const [query, setQuery] = useState("");
   const modelListRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const model = useVault((s) => s.model);
   const provider = useVault((s) => s.provider);
   const apiKey = useVault((s) => s.apiKey);
@@ -31,6 +33,26 @@ export function ModelPicker() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [modelOpen]);
+
+  useEffect(() => {
+    if (modelOpen) {
+      setQuery("");
+      const t = window.setTimeout(() => searchRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    }
+  }, [modelOpen]);
+
+  const q = query.trim().toLowerCase();
+  const filteredProviders = useMemo(() => {
+    if (!q) return PROVIDERS;
+    return PROVIDERS.filter((p) =>
+      [p.id, p.label, p.family, p.note].some((field) => field.toLowerCase().includes(q))
+    );
+  }, [q]);
+  const filteredModels = useMemo(() => {
+    if (!q) return models;
+    return models.filter((id) => id.toLowerCase().includes(q));
+  }, [models, q]);
 
   useEffect(() => {
     if (!modelOpen || !hasKey) return;
@@ -78,12 +100,22 @@ export function ModelPicker() {
             transition={{ duration: 0.15 }}
             className="absolute right-0 bottom-full z-30 mb-2 w-80 rounded-xl border border-line bg-surface p-2 shadow-2xl"
           >
+            <div className="mb-2 px-1">
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search models or providers…"
+                className="w-full rounded-lg border border-line bg-bg px-3 py-1.5 text-xs text-fg placeholder:text-faint focus:border-lime focus:outline-none"
+              />
+            </div>
             <div className="mb-2 border-b border-line pb-2">
               <div className="px-3 pt-1 pb-1.5 text-[10px] tracking-wide text-faint uppercase">
                 Providers
               </div>
               <div className="grid grid-cols-3 gap-1 px-1">
-                {PROVIDERS.map((p) => {
+                {filteredProviders.map((p) => {
                   const isCur = p.id === provider;
                   const hasK = Boolean(providerKeys[p.id]?.apiKey?.trim() || (isCur && hasKey));
                   return (
@@ -106,6 +138,9 @@ export function ModelPicker() {
                     </button>
                   );
                 })}
+                {filteredProviders.length === 0 && (
+                  <p className="col-span-3 px-2 py-1 text-xs text-muted">No matching providers.</p>
+                )}
               </div>
             </div>
 
@@ -127,7 +162,7 @@ export function ModelPicker() {
               <p className="px-3 py-2 text-xs text-danger">{modelError}</p>
             ) : (
               <div className="nice-scroll max-h-36 overflow-y-auto pr-1" role="listbox" aria-label="Available models">
-                {models.map((id) => (
+                {filteredModels.map((id) => (
                   <button
                     key={id}
                     type="button"
@@ -144,6 +179,9 @@ export function ModelPicker() {
                     {id}
                   </button>
                 ))}
+                {filteredModels.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-muted">No matching models.</p>
+                )}
               </div>
             )}
           </motion.div>

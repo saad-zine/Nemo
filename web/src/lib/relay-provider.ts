@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-export const provider = z.enum(["openai", "anthropic", "gemini", "groq", "xai", "compatible"]);
+export const provider = z.enum([
+  "openai",
+  "anthropic",
+  "gemini",
+  "groq",
+  "xai",
+  "freellmapi",
+  "compatible",
+]);
 
 export const schema = z.object({
   provider,
@@ -28,12 +36,14 @@ export const modelsSchema = z.object({
 const OPENAI_BASE = "https://api.openai.com/v1";
 const GROQ_BASE = "https://api.groq.com/openai/v1";
 const XAI_BASE = "https://api.x.ai/v1";
+const FREELLMAPI_BASE = "http://127.0.0.1:31415/v1";
 
 export const ENDPOINTS: Partial<Record<z.infer<typeof provider>, string>> = {
   openai: OPENAI_BASE,
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
   groq: GROQ_BASE,
   xai: XAI_BASE,
+  freellmapi: FREELLMAPI_BASE,
 };
 
 export const MODEL_ENDPOINTS: Partial<Record<z.infer<typeof provider>, string>> = {
@@ -41,4 +51,5 @@ export const MODEL_ENDPOINTS: Partial<Record<z.infer<typeof provider>, string>> 
   gemini: "https://generativelanguage.googleapis.com/v1beta",
   groq: GROQ_BASE,
   xai: XAI_BASE,
+  freellmapi: FREELLMAPI_BASE,
 };
